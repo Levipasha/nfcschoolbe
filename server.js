@@ -1,15 +1,40 @@
 require('dotenv').config();
+// Load environment variables
+require('dotenv').config();
+
 const express = require('express');
+const mongoose = require('mongoose');
 const cors = require('cors');
 const helmet = require('helmet');
 const mongoSanitize = require('express-mongo-sanitize');
-const connectDB = require('./config/database');
+const path = require('path');
+
+// Route imports
+const adminRoutes = require('./routes/adminRoutes');
+const schoolRoutes = require('./routes/schoolRoutes');
+const studentRoutes = require('./routes/studentRoutes');
+const uploadRoutes = require('./routes/uploadRoutes'); // Keep this as it's in the original file
 
 // Initialize express
 const app = express();
 
-// Connect to database
-connectDB();
+// Trust proxy - Required for Railway/Vercel to handle rate limiting correctly
+app.set('trust proxy', 1);
+
+// Database Connection
+const MONGODB_URI = process.env.MONGODB_URI;
+
+if (!MONGODB_URI) {
+    console.error('❌ CRITICAL ERROR: MONGODB_URI is not defined in environment variables!');
+    process.exit(1);
+}
+
+mongoose.connect(MONGODB_URI)
+    .then(() => console.log('✅ Connected to MongoDB Atlas'))
+    .catch(err => {
+        console.error('❌ Error connecting to MongoDB:', err.message);
+        process.exit(1);
+    });
 
 // Security middleware
 app.use(helmet()); // Set security HTTP headers
