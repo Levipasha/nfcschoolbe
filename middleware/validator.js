@@ -2,7 +2,7 @@ const validator = require('validator');
 
 // Validate student data
 const validateStudentData = (req, res, next) => {
-    const { name, rollNumber, class: studentClass, parentName, parentPhone, emergencyContact } = req.body;
+    const { name, rollNumber, class: studentClass } = req.body;
 
     const errors = [];
 
@@ -21,25 +21,6 @@ const validateStudentData = (req, res, next) => {
     // Class validation
     if (!studentClass || validator.isEmpty(studentClass.trim())) {
         errors.push('Class is required');
-    }
-
-    // Parent name validation
-    if (!parentName || validator.isEmpty(parentName.trim())) {
-        errors.push('Parent name is required');
-    }
-
-    // Parent phone validation
-    if (!parentPhone || validator.isEmpty(parentPhone.trim())) {
-        errors.push('Parent phone is required');
-    } else if (!/^[\d\s\-\+\(\)]+$/.test(parentPhone)) {
-        errors.push('Parent phone must be a valid phone number');
-    }
-
-    // Emergency contact validation
-    if (!emergencyContact || validator.isEmpty(emergencyContact.trim())) {
-        errors.push('Emergency contact is required');
-    } else if (!/^[\d\s\-\+\(\)]+$/.test(emergencyContact)) {
-        errors.push('Emergency contact must be a valid phone number');
     }
 
     if (errors.length > 0) {
@@ -64,11 +45,11 @@ const validateStudentId = (req, res, next) => {
         });
     }
 
-    // Check if ID follows expected format (Alphanumeric and hyphens)
-    if (!/^[a-z0-9-]+$/i.test(id)) {
+    // Check if ID follows expected format (Alphanumeric and hyphens/dots)
+    if (!/^[a-z0-9-.]+$/i.test(id)) {
         return res.status(400).json({
             success: false,
-            message: 'Invalid student ID format'
+            message: 'Invalid ID format'
         });
     }
 

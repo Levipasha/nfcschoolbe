@@ -12,10 +12,10 @@ const studentProfileLimiter = rateLimit({
     legacyHeaders: false,
 });
 
-// Stricter rate limiter for admin endpoints
+// Rate limiter for admin endpoints (dashboard loads multiple requests in parallel)
 const adminLimiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 minutes
-    max: 50, // Limit admin operations
+    max: parseInt(process.env.ADMIN_RATE_LIMIT_MAX) || 300, // Allow enough for dashboard + normal use
     message: {
         success: false,
         message: 'Too many admin requests, please try again later.'

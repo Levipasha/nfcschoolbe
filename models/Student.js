@@ -52,34 +52,63 @@ const studentSchema = new mongoose.Schema({
     photo: {
         type: String,
         trim: true,
-        default: 'https://via.placeholder.com/300x300/4F46E5/FFFFFF?text=Student'
+        default: 'https://placehold.co/300x300/4F46E5/FFFFFF?text=Student'
     },
+    bloodGroup: {
+        type: String,
+        trim: true
+    },
+    motherName: {
+        type: String,
+        trim: true
+    },
+    fatherName: {
+        type: String,
+        trim: true
+    },
+    motherPhone: {
+        type: String,
+        trim: true
+    },
+    fatherPhone: {
+        type: String,
+        trim: true
+    },
+    address: {
+        type: String,
+        trim: true
+    },
+    pincode: {
+        type: String,
+        trim: true
+    },
+    city: {
+        type: String,
+        trim: true
+    },
+    state: {
+        type: String,
+        trim: true
+    },
+    // Secure access token for NFC tag
+    accessToken: {
+        type: String,
+        unique: true,
+        sparse: true,
+        index: true
+    },
+    // Keeping these for backward compatibility if needed, but making them optional
     parentName: {
         type: String,
-        required: [true, 'Parent name is required'],
         trim: true
     },
     parentPhone: {
         type: String,
-        required: [true, 'Parent phone is required'],
-        trim: true,
-        validate: {
-            validator: function (v) {
-                return /^[\d\s\-\+\(\)]+$/.test(v);
-            },
-            message: 'Please enter a valid phone number'
-        }
+        trim: true
     },
     emergencyContact: {
         type: String,
-        required: [true, 'Emergency contact is required'],
-        trim: true,
-        validate: {
-            validator: function (v) {
-                return /^[\d\s\-\+\(\)]+$/.test(v);
-            },
-            message: 'Please enter a valid emergency contact number'
-        }
+        trim: true
     },
     scanCount: {
         type: Number,
@@ -157,14 +186,30 @@ studentSchema.pre('validate', async function (next) {
     }
 });
 
-// Update school student count after save
+// Auto-generate secure access token after save (for NFC tags)
 studentSchema.post('save', async function (doc) {
     try {
+        // Update school student count
         const School = mongoose.model('School');
         const count = await mongoose.model('Student').countDocuments({ school: doc.school });
         await School.findByIdAndUpdate(doc.school, { studentCount: count });
+
+        // Generate access token if not exists
+        if (!doc.accessToken) {
+            const AccessToken = mongoose.model('AccessToken');
+            const tokenDoc = await AccessToken.createPermanentToken(
+                doc.studentId,
+                `NFC Tag for ${doc.name}`
+            );
+
+            // Save token to student record
+            doc.accessToken = tokenDoc.token;
+            await doc.constructor.findByIdAndUpdate(doc._id, {
+                accessToken: tokenDoc.token
+            });
+        }
     } catch (error) {
-        console.error('Error updating school student count:', error);
+        console.error('Error in post-save hook:', error);
     }
 });
 
@@ -198,9 +243,19 @@ studentSchema.methods.recordScan = function (ipAddress, userAgent) {
     return this.save();
 };
 
-// Method to generate NFC URL
+// Method to generate secure NFC URL with token
 studentSchema.methods.generateNFCUrl = function (baseUrl = 'http://localhost:5173') {
-    return `${baseUrl}/student?id=${this.studentId}`;
+    if (!this.accessToken) {
+        throw new Error('Access token not generated for this student');
+    }
+    return `${baseUrl}/p/${this.accessToken}`;
+};
+
+// Method to generate shareable link (temporary, 24h)
+studentSchema.methods.generateShareLink = async function (baseUrl = 'http://localhost:5173') {
+    const AccessToken = mongoose.model('AccessToken');
+    const tempToken = await AccessToken.createTemporaryToken(this.studentId, 24);
+    return `${baseUrl}/p/${tempToken.token}`;
 };
 
 // Virtual for formatted last scan time

@@ -10,10 +10,8 @@ const mongoSanitize = require('express-mongo-sanitize');
 const path = require('path');
 
 // Route imports
-const adminRoutes = require('./routes/adminRoutes');
-const schoolRoutes = require('./routes/schoolRoutes');
-const studentRoutes = require('./routes/studentRoutes');
-const uploadRoutes = require('./routes/uploadRoutes'); // Keep this as it's in the original file
+// (Using inline require in app.use for cleaner structure)
+
 
 // Initialize express
 const app = express();
@@ -56,6 +54,11 @@ const corsOptions = {
         // Allow requests with no origin (like mobile apps or curl requests)
         if (!origin) return callback(null, true);
 
+        // In development, allow all origins to facilitate local network testing
+        if (process.env.NODE_ENV !== 'production') {
+            return callback(null, true);
+        }
+
         const isAllowed = allowedOrigins.some(allowed => {
             if (allowed instanceof RegExp) return allowed.test(origin);
             return allowed === origin;
@@ -74,14 +77,25 @@ const corsOptions = {
 app.use(cors(corsOptions));
 
 // Body parser middleware
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ limit: '50mb', extended: true }));
+
+// Serve static files with permissive CORS for images
+app.use('/uploads', (req, res, next) => {
+    res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+    next();
+}, express.static(path.join(__dirname, 'uploads')));
 
 // Routes
+app.use('/api/p', require('./routes/secureProfileRoutes')); // Secure tokenized profiles
 app.use('/api/student', require('./routes/studentRoutes'));
 app.use('/api/admin', require('./routes/adminRoutes'));
 app.use('/api/upload', require('./routes/uploadRoutes'));
 app.use('/api/school', require('./routes/schoolRoutes'));
+app.use('/api/sessions', require('./routes/sessionRoutes'));
+app.use('/api/artist', require('./routes/artistRoutes'));
+
+
 
 // Health check endpoint
 app.get('/health', (req, res) => {
@@ -133,14 +147,26 @@ app.use((err, req, res, next) => {
     });
 });
 
-// Start server
+// Start server with WebSocket support
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => {
+const http = require('http');
+const server = http.createServer(app);
+
+// Initialize WebSocket
+const initializeWebSocket = require('./config/websocket');
+const io = initializeWebSocket(server, corsOptions);
+
+// Make io accessible to routes
+app.set('io', io);
+
+server.listen(PORT, () => {
     console.log(`
 🚀 Server is running on port ${PORT}
 📡 Environment: ${process.env.NODE_ENV || 'development'}
-🌐 CORS enabled for: ${corsOptions.origin}
+🌐 CORS enabled for allowed origins
+🔌 WebSocket enabled for real-time features
   `);
 });
 
-module.exports = app;
+module.exports = { app, io, server };
+

@@ -4,6 +4,7 @@ const jwt = require('jsonwebtoken');
 const Student = require('../models/Student');
 const School = require('../models/School');
 const Admin = require('../models/Admin');
+const Artist = require('../models/Artist');
 const authMiddleware = require('../middleware/auth');
 const { adminLimiter, loginLimiter } = require('../middleware/rateLimiter');
 const { validateStudentData } = require('../middleware/validator');
@@ -285,6 +286,106 @@ router.post('/students/:id/toggle-status', authMiddleware, adminLimiter, async (
         res.status(500).json({
             success: false,
             message: 'Server error while toggling student status'
+        });
+    }
+});
+
+// ---------- Artists (admin: list, get, update e.g. badges) ----------
+// @route   GET /api/admin/artists
+// @desc    Get all artists
+// @access  Protected
+router.get('/artists', authMiddleware, adminLimiter, async (req, res) => {
+    try {
+        const { search = '' } = req.query;
+        const query = {};
+        if (search) {
+            query.$or = [
+                { name: { $regex: search, $options: 'i' } },
+                { artistId: { $regex: search, $options: 'i' } },
+                { code: { $regex: search, $options: 'i' } },
+                { email: { $regex: search, $options: 'i' } }
+            ];
+        }
+        const artists = await Artist.find(query)
+            .sort({ createdAt: -1 })
+            .select('artistId name code email isSetup scanCount badgeOverrides isActive createdAt');
+        res.json({
+            success: true,
+            data: artists,
+            total: artists.length
+        });
+    } catch (error) {
+        console.error('Error fetching artists:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error fetching artists'
+        });
+    }
+});
+
+// @route   GET /api/admin/artists/:id
+// @desc    Get single artist (MongoDB _id)
+// @access  Protected
+router.get('/artists/:id', authMiddleware, adminLimiter, async (req, res) => {
+    try {
+        const artist = await Artist.findById(req.params.id);
+        if (!artist) {
+            return res.status(404).json({
+                success: false,
+                message: 'Artist not found'
+            });
+        }
+        res.json({
+            success: true,
+            data: artist
+        });
+    } catch (error) {
+        console.error('Error fetching artist:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error fetching artist'
+        });
+    }
+});
+
+// @route   PUT /api/admin/artists/:id
+// @desc    Update artist (e.g. badge overrides)
+// @access  Protected
+router.put('/artists/:id', authMiddleware, adminLimiter, async (req, res) => {
+    try {
+        const allowed = ['name', 'bio', 'specialization', 'badgeOverrides', 'isActive'];
+        const updateData = {};
+        allowed.forEach(key => {
+            if (req.body[key] !== undefined) updateData[key] = req.body[key];
+        });
+        if (Object.keys(updateData).length === 0) {
+            return res.status(400).json({
+                success: false,
+                message: 'No allowed fields to update'
+            });
+        }
+        updateData.updatedAt = new Date();
+        const artist = await Artist.findByIdAndUpdate(
+            req.params.id,
+            { $set: updateData },
+            { new: true, runValidators: true }
+        );
+        if (!artist) {
+            return res.status(404).json({
+                success: false,
+                message: 'Artist not found'
+            });
+        }
+        res.json({
+            success: true,
+            message: 'Artist updated successfully',
+            data: artist
+        });
+    } catch (error) {
+        console.error('Error updating artist:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error updating artist'
         });
     }
 });
