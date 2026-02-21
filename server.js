@@ -1,6 +1,4 @@
 require('dotenv').config();
-// Load environment variables
-require('dotenv').config();
 
 const express = require('express');
 const mongoose = require('mongoose');
@@ -147,26 +145,29 @@ app.use((err, req, res, next) => {
     });
 });
 
-// Start server with WebSocket support
-const PORT = process.env.PORT || 5000;
-const http = require('http');
-const server = http.createServer(app);
+// On Vercel: export only the Express app (default export required for serverless).
+// WebSocket and listen() are not supported in serverless; real-time features are no-op on Vercel.
+const isVercel = !!process.env.VERCEL;
 
-// Initialize WebSocket
-const initializeWebSocket = require('./config/websocket');
-const io = initializeWebSocket(server, corsOptions);
+if (isVercel) {
+    app.set('io', null);
+    module.exports = app;
+} else {
+    const PORT = process.env.PORT || 5000;
+    const http = require('http');
+    const server = http.createServer(app);
+    const initializeWebSocket = require('./config/websocket');
+    const io = initializeWebSocket(server, corsOptions);
+    app.set('io', io);
 
-// Make io accessible to routes
-app.set('io', io);
-
-server.listen(PORT, () => {
-    console.log(`
+    server.listen(PORT, () => {
+        console.log(`
 🚀 Server is running on port ${PORT}
 📡 Environment: ${process.env.NODE_ENV || 'development'}
 🌐 CORS enabled for allowed origins
 🔌 WebSocket enabled for real-time features
   `);
-});
-
-module.exports = { app, io, server };
+    });
+    module.exports = app;
+}
 
