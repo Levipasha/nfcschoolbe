@@ -5,24 +5,50 @@ const Student = require('../models/Student');
 const authMiddleware = require('../middleware/auth');
 const { adminLimiter } = require('../middleware/rateLimiter');
 const { parseCSV, parseTXT } = require('../utils/csvParser');
+const { uploadBuffer } = require('../utils/cloudinary');
 
-// Configure multer for file upload
 const storage = multer.memoryStorage();
+
+// Multer for CSV/TXT bulk upload
 const upload = multer({
-    storage: storage,
-    limits: {
-        fileSize: 5 * 1024 * 1024, // 5MB max file size
-    },
+    storage,
+    limits: { fileSize: 5 * 1024 * 1024 },
     fileFilter: (req, file, cb) => {
-        // Accept CSV and TXT files
-        if (file.mimetype === 'text/csv' ||
-            file.mimetype === 'text/plain' ||
-            file.originalname.endsWith('.csv') ||
-            file.originalname.endsWith('.txt')) {
+        if (file.mimetype === 'text/csv' || file.mimetype === 'text/plain' ||
+            file.originalname.endsWith('.csv') || file.originalname.endsWith('.txt')) {
             cb(null, true);
         } else {
             cb(new Error('Only CSV and TXT files are allowed'), false);
         }
+    }
+});
+
+// Multer for image upload (student/admin photo → Cloudinary)
+const photoUpload = multer({
+    storage,
+    limits: { fileSize: 5 * 1024 * 1024 },
+    fileFilter: (req, file, cb) => {
+        if (file.mimetype.startsWith('image/')) {
+            cb(null, true);
+        } else {
+            cb(new Error('Only images are allowed'), false);
+        }
+    }
+});
+
+// @route   POST /api/upload/photo
+// @desc    Upload a single image to Cloudinary (e.g. student photo). Returns { url }.
+// @access  Protected (Admin)
+router.post('/photo', authMiddleware, adminLimiter, photoUpload.single('photo'), async (req, res) => {
+    try {
+        if (!req.file) {
+            return res.status(400).json({ success: false, message: 'No file uploaded' });
+        }
+        const result = await uploadBuffer(req.file.buffer, { folder: 'nfc/students' });
+        res.json({ success: true, url: result.secure_url });
+    } catch (error) {
+        console.error('Photo upload error:', error);
+        res.status(500).json({ success: false, message: error.message || 'Upload failed' });
     }
 });
 

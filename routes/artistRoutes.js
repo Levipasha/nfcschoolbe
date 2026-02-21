@@ -4,32 +4,17 @@ const router = express.Router();
 const Artist = require('../models/Artist');
 const Session = require('../models/Session');
 const multer = require('multer');
-const path = require('path');
-const fs = require('fs');
+const { uploadBuffer } = require('../utils/cloudinary');
 
-// Configure multer for photo uploads
-const storage = multer.diskStorage({
-    destination: function (req, file, cb) {
-        const dir = path.join(__dirname, '..', 'uploads', 'artists');
-        if (!fs.existsSync(dir)) {
-            fs.mkdirSync(dir, { recursive: true });
-        }
-        cb(null, dir);
-    },
-    filename: function (req, file, cb) {
-        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-        cb(null, 'profile-' + uniqueSuffix + path.extname(file.originalname));
-    }
-});
-
+// Multer memory storage for Cloudinary upload
 const upload = multer({
-    storage: storage,
-    limits: { fileSize: 2 * 1024 * 1024 }, // 2MB limit
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 50 * 1024 * 1024 }, // 50MB for short videos
     fileFilter: (req, file, cb) => {
-        if (file.mimetype.startsWith('image/')) {
+        if (file.mimetype.startsWith('image/') || file.mimetype.startsWith('video/')) {
             cb(null, true);
         } else {
-            cb(new Error('Only images are allowed'));
+            cb(new Error('Only images and videos are allowed'));
         }
     }
 });
@@ -38,25 +23,24 @@ const upload = multer({
 router.get('/test-route', (req, res) => res.json({ success: true, message: 'Artist route cluster reached' }));
 
 // @route   POST /api/artist/upload-photo
-// @desc    Upload artist profile photo
+// @desc    Upload artist profile/gallery photo to Cloudinary
 // @access  Public (for setup)
 router.post('/upload-photo', (req, res, next) => {
-    console.log('Upload photo request received');
     next();
-}, upload.single('photo'), (req, res) => {
+}, upload.single('photo'), async (req, res) => {
     try {
-        console.log('Multer finished processing');
         if (!req.file) {
-            console.log('No file in request');
             return res.status(400).json({ success: false, message: 'No file uploaded' });
         }
-
-        const photoUrl = `/uploads/artists/${req.file.filename}`;
-        console.log('Upload successful:', photoUrl);
-        res.json({ success: true, url: photoUrl });
+        const isVideo = (req.file.mimetype || '').startsWith('video/');
+        const result = await uploadBuffer(req.file.buffer, {
+            folder: 'nfc/artists',
+            resource_type: isVideo ? 'video' : 'image'
+        });
+        res.json({ success: true, url: result.secure_url });
     } catch (error) {
         console.error('Upload route error:', error);
-        res.status(500).json({ success: false, message: error.message });
+        res.status(500).json({ success: false, message: error.message || 'Upload failed' });
     }
 });
 
