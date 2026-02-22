@@ -1,15 +1,20 @@
 const express = require('express');
+const jwt = require('jsonwebtoken');
+const validator = require('validator');
 console.log('Artist routes loading...');
 const router = express.Router();
 const Artist = require('../models/Artist');
 const Session = require('../models/Session');
 const multer = require('multer');
 const { uploadBuffer } = require('../utils/cloudinary');
+const { firebaseAuth } = require('../middleware/firebaseAuth');
+const { generateOtp, setOtp, consumeOtp } = require('../utils/otpStore');
+const { sendOtpEmail, isConfigured: isSmtpConfigured } = require('../utils/sendMail');
 
-// Multer memory storage for Cloudinary upload
+// Multer memory storage for Cloudinary upload (4MB to stay under Vercel 4.5MB body limit)
 const upload = multer({
     storage: multer.memoryStorage(),
-    limits: { fileSize: 50 * 1024 * 1024 }, // 50MB for short videos
+    limits: { fileSize: 4 * 1024 * 1024 }, // 4MB for Vercel compatibility
     fileFilter: (req, file, cb) => {
         if (file.mimetype.startsWith('image/') || file.mimetype.startsWith('video/')) {
             cb(null, true);
@@ -26,11 +31,20 @@ router.get('/test-route', (req, res) => res.json({ success: true, message: 'Arti
 // @desc    Upload artist profile/gallery photo to Cloudinary
 // @access  Public (for setup)
 router.post('/upload-photo', (req, res, next) => {
-    next();
-}, upload.single('photo'), async (req, res) => {
+    upload.single('photo')(req, res, (err) => {
+        if (err) {
+            const msg = err.code === 'LIMIT_FILE_SIZE' ? 'File too large. Use an image under 4MB.' : (err.message || 'Upload failed');
+            return res.status(400).json({ success: false, message: msg });
+        }
+        next();
+    });
+}, async (req, res) => {
     try {
-        if (!req.file) {
-            return res.status(400).json({ success: false, message: 'No file uploaded' });
+        if (!req.file || !req.file.buffer) {
+            return res.status(400).json({
+                success: false,
+                message: 'No file uploaded or file too large. Use an image under 4MB on Vercel.'
+            });
         }
         const isVideo = (req.file.mimetype || '').startsWith('video/');
         const result = await uploadBuffer(req.file.buffer, {
@@ -40,7 +54,74 @@ router.post('/upload-photo', (req, res, next) => {
         res.json({ success: true, url: result.secure_url });
     } catch (error) {
         console.error('Upload route error:', error);
-        res.status(500).json({ success: false, message: error.message || 'Upload failed' });
+        const msg = error.message || 'Upload failed';
+        const isConfigError = msg.includes('Cloudinary is not configured');
+        const status = isConfigError ? 503 : 500;
+        res.status(status).json({ success: false, message: msg });
+    }
+});
+
+// @route   POST /api/artist/send-otp
+// @desc    Send OTP to profile email (must match an artist's ownerEmail or email)
+// @access  Public
+router.post('/send-otp', async (req, res) => {
+    try {
+        const email = (req.body.email || '').trim();
+        if (!validator.isEmail(email)) {
+            return res.status(400).json({ success: false, message: 'Please enter a valid email address.' });
+        }
+        if (!isSmtpConfigured()) {
+            return res.status(503).json({ success: false, message: 'Email verification is not configured. Use Google Sign-In or contact support.' });
+        }
+        const normalized = email.toLowerCase().trim();
+        const re = new RegExp('^' + normalized.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '$', 'i');
+        const hasProfile = await Artist.findOne({
+            isActive: true,
+            $or: [ { ownerEmail: re }, { email: re } ]
+        });
+        if (!hasProfile) {
+            return res.status(404).json({ success: false, message: 'No artist profile found with this email. Use the email linked to your artist card.' });
+        }
+        const otp = generateOtp();
+        setOtp(normalized, otp);
+        await sendOtpEmail(email, otp);
+        res.json({ success: true, message: 'Verification code sent to your email.' });
+    } catch (err) {
+        console.error('Send OTP error:', err);
+        res.status(500).json({ success: false, message: err.message || 'Failed to send code.' });
+    }
+});
+
+// @route   POST /api/artist/verify-otp
+// @desc    Verify OTP and return JWT for editing artist profiles (same email as owner)
+// @access  Public
+router.post('/verify-otp', async (req, res) => {
+    try {
+        const email = (req.body.email || '').trim();
+        const otp = (req.body.otp || '').trim();
+        if (!validator.isEmail(email)) {
+            return res.status(400).json({ success: false, message: 'Invalid email.' });
+        }
+        if (!otp || otp.length !== 6) {
+            return res.status(400).json({ success: false, message: 'Please enter the 6-digit code.' });
+        }
+        const normalized = email.toLowerCase();
+        if (!consumeOtp(normalized, otp)) {
+            return res.status(400).json({ success: false, message: 'Invalid or expired code. Request a new one.' });
+        }
+        const secret = process.env.JWT_SECRET;
+        if (!secret) {
+            return res.status(500).json({ success: false, message: 'Server auth not configured.' });
+        }
+        const token = jwt.sign(
+            { email: normalized, type: 'otp' },
+            secret,
+            { expiresIn: '1h' }
+        );
+        res.json({ success: true, token, email: normalized });
+    } catch (err) {
+        console.error('Verify OTP error:', err);
+        res.status(500).json({ success: false, message: err.message || 'Verification failed.' });
     }
 });
 
@@ -438,6 +519,124 @@ router.post('/quick-create', async (req, res) => {
         res.status(400).json({
             success: false,
             message: 'Error creating artist container',
+            error: error.message
+        });
+    }
+});
+
+// --- Landing page: artist owner only (Firebase ID token required) ---
+// GET /api/artist/my-profiles - list artist profiles owned by or linked to the logged-in user (same Gmail)
+// Matches: ownerUid, ownerEmail, OR profile contact email (so existing profiles with your Gmail show up)
+router.get('/my-profiles', firebaseAuth, async (req, res) => {
+    try {
+        const uid = req.firebaseUser.uid;
+        const email = (req.firebaseUser.email || '').toLowerCase().trim();
+        const query = { isActive: true };
+        if (uid || email) {
+            query.$or = [];
+            if (uid) query.$or.push({ ownerUid: uid });
+            if (email) {
+                query.$or.push({ ownerEmail: email });
+                query.$or.push({ email }); // profile contact email same as login email
+            }
+        } else {
+            query.ownerUid = uid;
+        }
+        const artists = await Artist.find(query)
+            .sort({ updatedAt: -1 })
+            .lean();
+        res.json({
+            success: true,
+            count: artists.length,
+            data: artists
+        });
+    } catch (error) {
+        console.error('Error fetching my artist profiles:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error fetching your artist profiles',
+            error: error.message
+        });
+    }
+});
+
+// PUT /api/artist/me/:artistId - update only if the logged-in user owns this artist (artists only, not students)
+router.put('/me/:artistId', firebaseAuth, async (req, res) => {
+    try {
+        const uid = req.firebaseUser.uid;
+        const { artistId } = req.params;
+
+        let artist = await Artist.findOne({ artistId, isActive: true });
+        if (!artist && artistId.match(/^[0-9a-fA-F]{24}$/)) {
+            artist = await Artist.findById(artistId);
+        }
+        if (!artist) {
+            return res.status(404).json({
+                success: false,
+                message: 'Artist profile not found'
+            });
+        }
+
+        const email = (req.firebaseUser.email || '').toLowerCase().trim();
+        const isOwner =
+            (artist.ownerUid && artist.ownerUid === uid) ||
+            (artist.ownerEmail && artist.ownerEmail.toLowerCase() === email) ||
+            (artist.email && artist.email.toLowerCase() === email);
+        if (!isOwner) {
+            return res.status(403).json({
+                success: false,
+                message: 'You can only edit your own artist profiles.'
+            });
+        }
+
+        const updateData = {
+            name: req.body.name,
+            bio: req.body.bio,
+            photo: req.body.photo,
+            backgroundPhoto: req.body.backgroundPhoto,
+            gallery: req.body.gallery,
+            phone: req.body.phone,
+            email: req.body.email,
+            website: req.body.website,
+            instagram: req.body.instagram,
+            facebook: req.body.facebook,
+            twitter: req.body.twitter,
+            whatsapp: req.body.whatsapp,
+            linkedin: req.body.linkedin,
+            specialization: req.body.specialization,
+            artworkCount: req.body.artworkCount,
+            instagramName: req.body.instagramName,
+            instagramCategory: req.body.instagramCategory,
+            instagramPosts: req.body.instagramPosts,
+            instagramFollowers: req.body.instagramFollowers,
+            instagramFollowing: req.body.instagramFollowing,
+            instagramAccountBio: req.body.instagramAccountBio,
+            badgeOverrides: req.body.badgeOverrides,
+            ownerEmail: email || artist.ownerEmail,
+            ownerUid: uid || artist.ownerUid,
+            updatedAt: Date.now()
+        };
+
+        Object.keys(updateData).forEach(key =>
+            updateData[key] === undefined && delete updateData[key]
+        );
+
+        const updatedArtist = await Artist.findByIdAndUpdate(
+            artist._id,
+            updateData,
+            { new: true, runValidators: true }
+        );
+
+        res.json({
+            success: true,
+            message: 'Artist profile updated successfully',
+            data: updatedArtist
+        });
+    } catch (error) {
+        console.error('Error updating my artist profile:', error);
+        res.status(400).json({
+            success: false,
+            message: 'Error updating profile',
             error: error.message
         });
     }

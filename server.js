@@ -1,12 +1,15 @@
-require('dotenv').config();
+const path = require('path');
+require('dotenv').config({ path: path.join(__dirname, '.env') });
+
+if (!process.env.CLOUDINARY_CLOUD_NAME || !process.env.CLOUDINARY_API_KEY || !process.env.CLOUDINARY_API_SECRET) {
+    console.warn('⚠️  Cloudinary env missing. Photo uploads will fail. Set CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, CLOUDINARY_API_SECRET in nfcschoolbe/.env');
+}
 
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
 const helmet = require('helmet');
 const mongoSanitize = require('express-mongo-sanitize');
-const path = require('path');
-
 // Route imports
 // (Using inline require in app.use for cleaner structure)
 
@@ -36,14 +39,15 @@ mongoose.connect(MONGODB_URI)
 app.use(helmet()); // Set security HTTP headers
 app.use(mongoSanitize()); // Prevent NoSQL injection
 
-// CORS configuration
+// CORS configuration (API is used by: nfcschoolfe, landing page, mobile, etc.)
 const allowedOrigins = [
     'http://localhost:5173',
     'http://localhost:3000',
     'https://www.skywebdev.xyz',
     'https://skywebdev.xyz',
     process.env.FRONTEND_URL,
-    // Add Vercel preview and production patterns
+    process.env.LANDING_PAGE_URL,  // Landing page (artist profile / OTP) – e.g. https://yoursite.com
+    // Vercel: any *.vercel.app (covers nfcschoolfe, landing page, previews)
     /^https:\/\/.*\.vercel\.app$/
 ].filter(Boolean);
 

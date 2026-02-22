@@ -1,12 +1,22 @@
+const path = require('path');
+require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
+
 const cloudinary = require('cloudinary').v2;
 const { Readable } = require('stream');
 
-const cloudName = process.env.CLOUDINARY_CLOUD_NAME;
-const apiKey = process.env.CLOUDINARY_API_KEY;
-const apiSecret = process.env.CLOUDINARY_API_SECRET;
+// Support both CLOUDINARY_* and alternate names; trim in case .env has spaces
+function getConfig() {
+    const trim = (v) => (typeof v === 'string' ? v.trim() : v) || undefined;
+    return {
+        cloudName: trim(process.env.CLOUDINARY_CLOUD_NAME),
+        apiKey: trim(process.env.CLOUDINARY_API_KEY || process.env.API_KEY),
+        apiSecret: trim(process.env.CLOUDINARY_API_SECRET || process.env.API_SECRET)
+    };
+}
 
-if (cloudName && apiKey && apiSecret) {
-    cloudinary.config({ cloud_name: cloudName, api_key: apiKey, api_secret: apiSecret });
+const cached = getConfig();
+if (cached.cloudName && cached.apiKey && cached.apiSecret) {
+    cloudinary.config({ cloud_name: cached.cloudName, api_key: cached.apiKey, api_secret: cached.apiSecret });
 }
 
 /**
@@ -17,9 +27,15 @@ if (cloudName && apiKey && apiSecret) {
  */
 function uploadBuffer(buffer, options = {}) {
     return new Promise((resolve, reject) => {
-        if (!cloudName || !apiKey || !apiSecret) {
-            return reject(new Error('Cloudinary is not configured. Set CLOUDINARY_CLOUD_NAME, API_KEY, API_SECRET in .env'));
+        const cfg = getConfig();
+        if (!cfg.cloudName || !cfg.apiKey || !cfg.apiSecret) {
+            const missing = [];
+            if (!cfg.cloudName) missing.push('CLOUDINARY_CLOUD_NAME');
+            if (!cfg.apiKey) missing.push('CLOUDINARY_API_KEY');
+            if (!cfg.apiSecret) missing.push('CLOUDINARY_API_SECRET');
+            return reject(new Error('Cloudinary is not configured. Set in nfcschoolbe/.env: ' + missing.join(', ')));
         }
+        cloudinary.config({ cloud_name: cfg.cloudName, api_key: cfg.apiKey, api_secret: cfg.apiSecret });
         const folder = options.folder || 'nfc';
         const resourceType = options.resource_type || 'image';
         const uploadOptions = { folder, resource_type: resourceType };
