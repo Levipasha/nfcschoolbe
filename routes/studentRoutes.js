@@ -69,6 +69,7 @@ router.get('/:id', studentProfileLimiter, validateStudentId, async (req, res) =>
                 name: student.name,
                 rollNumber: student.rollNumber,
                 class: student.class,
+                age: student.age,
                 photo: student.photo,
                 bloodGroup: student.bloodGroup,
                 motherName: student.motherName,

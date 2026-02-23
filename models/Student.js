@@ -49,6 +49,11 @@ const studentSchema = new mongoose.Schema({
         required: [true, 'Class is required'],
         trim: true
     },
+    age: {
+        type: Number,
+        min: [1, 'Age must be at least 1'],
+        max: [120, 'Age must be at most 120']
+    },
     photo: {
         type: String,
         trim: true,
