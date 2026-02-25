@@ -67,6 +67,7 @@ router.get('/:id', studentProfileLimiter, validateStudentId, async (req, res) =>
             data: {
                 studentId: student.studentId,
                 name: student.name,
+                nickname: student.nickname,
                 rollNumber: student.rollNumber,
                 class: student.class,
                 age: student.age,

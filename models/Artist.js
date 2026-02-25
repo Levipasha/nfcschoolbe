@@ -151,6 +151,12 @@ const artistSchema = new mongoose.Schema({
         trim: true,
         default: ''
     },
+    // Profile theme (controls card colors/typography presets on public profile)
+    profileTheme: {
+        type: String,
+        trim: true,
+        default: 'mono', // mono, classic, neon, minimal etc.
+    },
     // Secure access token for NFC tag
     accessToken: {
         type: String,

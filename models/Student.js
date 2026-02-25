@@ -38,6 +38,11 @@ const studentSchema = new mongoose.Schema({
         trim: true,
         maxlength: [100, 'Name cannot exceed 100 characters']
     },
+    nickname: {
+        type: String,
+        trim: true,
+        maxlength: [100, 'Nickname cannot exceed 100 characters']
+    },
     rollNumber: {
         type: String,
         required: [true, 'Roll number is required'],

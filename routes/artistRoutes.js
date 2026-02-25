@@ -357,7 +357,8 @@ router.post('/', async (req, res) => {
             twitter: req.body.twitter || '',
             specialization: req.body.specialization || '',
             backgroundPhoto: req.body.backgroundPhoto || undefined,
-            gallery: req.body.gallery || []
+            gallery: req.body.gallery || [],
+            profileTheme: req.body.profileTheme || 'mono'
         };
 
         const artist = new Artist(artistData);
@@ -397,6 +398,7 @@ router.put('/:id', async (req, res) => {
             artworkCount: req.body.artworkCount,
             backgroundPhoto: req.body.backgroundPhoto,
             gallery: req.body.gallery,
+            profileTheme: req.body.profileTheme,
             updatedAt: Date.now()
         };
 
@@ -612,6 +614,7 @@ router.put('/me/:artistId', firebaseAuth, async (req, res) => {
             instagramFollowing: req.body.instagramFollowing,
             instagramAccountBio: req.body.instagramAccountBio,
             badgeOverrides: req.body.badgeOverrides,
+            profileTheme: req.body.profileTheme,
             ownerEmail: email || artist.ownerEmail,
             ownerUid: uid || artist.ownerUid,
             updatedAt: Date.now()
@@ -682,6 +685,7 @@ router.put('/setup/:token', async (req, res) => {
             instagramFollowers: req.body.instagramFollowers,
             instagramFollowing: req.body.instagramFollowing,
             instagramAccountBio: req.body.instagramAccountBio,
+            profileTheme: req.body.profileTheme,
             ownerEmail: req.body.ownerEmail,
             ownerUid: req.body.ownerUid,
             isSetup: true,
