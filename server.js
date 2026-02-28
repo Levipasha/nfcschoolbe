@@ -96,8 +96,7 @@ app.use('/api/upload', require('./routes/uploadRoutes'));
 app.use('/api/school', require('./routes/schoolRoutes'));
 app.use('/api/sessions', require('./routes/sessionRoutes'));
 app.use('/api/artist', require('./routes/artistRoutes'));
-
-
+app.use('/api/general-profile', require('./routes/generalProfileRoutes'));
 
 // Health check endpoint
 app.get('/health', (req, res) => {
