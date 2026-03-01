@@ -118,7 +118,8 @@ app.get('/', (req, res) => {
                 'GET /api/student/:id - Get student profile by ID'
             ],
             admin: [
-                'POST /api/admin/login - Admin login',
+                'POST /api/admin/send-otp - Send OTP to admin email',
+                'POST /api/admin/verify-otp - Verify OTP and login',
                 'GET /api/admin/students - List all students',
                 'POST /api/admin/students - Add new student',
                 'GET /api/admin/students/:id - Get student details',

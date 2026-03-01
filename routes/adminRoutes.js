@@ -1,72 +1,78 @@
 const express = require('express');
 const router = express.Router();
 const jwt = require('jsonwebtoken');
+const validator = require('validator');
 const Student = require('../models/Student');
 const School = require('../models/School');
-const Admin = require('../models/Admin');
 const Artist = require('../models/Artist');
 const authMiddleware = require('../middleware/auth');
 const { adminLimiter, loginLimiter } = require('../middleware/rateLimiter');
 const { validateStudentData } = require('../middleware/validator');
+const { generateOtp, setAdminOtp, consumeAdminOtp } = require('../utils/otpStore');
+const { sendOtpEmail, isConfigured: isSmtpConfigured } = require('../utils/sendMail');
 
-// @route   POST /api/admin/login
-// @desc    Admin login
+// Only this email is allowed for admin login (no passwords, no usernames)
+const ALLOWED_ADMIN_EMAIL = 'skywebdevelopers123@gmail.com';
+
+// @route   POST /api/admin/send-otp
+// @desc    Send OTP to allowed admin email
 // @access  Public
-router.post('/login', loginLimiter, async (req, res) => {
+router.post('/send-otp', loginLimiter, async (req, res) => {
     try {
-        const { username, password } = req.body;
-
-        if (!username || !password) {
-            return res.status(400).json({
-                success: false,
-                message: 'Please provide username and password'
-            });
+        const email = (req.body.email || '').trim().toLowerCase();
+        if (!validator.isEmail(email)) {
+            return res.status(400).json({ success: false, message: 'Please enter a valid email address.' });
         }
-
-        // Check if admin exists
-        let admin = await Admin.findOne({ username });
-
-        // If no admin exists, create default admin (first time setup)
-        if (!admin) {
-            admin = new Admin({
-                username: process.env.ADMIN_USERNAME || 'admin',
-                password: process.env.ADMIN_PASSWORD || 'admin123'
-            });
-            await admin.save();
-            console.log('✅ Default admin created');
+        if (email !== ALLOWED_ADMIN_EMAIL) {
+            return res.status(403).json({ success: false, message: 'This email is not authorized for admin access.' });
         }
-
-        // Verify password
-        const isMatch = await admin.comparePassword(password);
-
-        if (!isMatch) {
-            return res.status(401).json({
-                success: false,
-                message: 'Invalid credentials'
-            });
+        if (!isSmtpConfigured()) {
+            return res.status(503).json({ success: false, message: 'Email service is not configured. Contact support.' });
         }
+        const otp = generateOtp();
+        setAdminOtp(email, otp);
+        await sendOtpEmail(email, otp, {
+            subject: 'Your admin login code – NFC School',
+            textPrefix: 'Your admin verification code',
+            subtitle: 'Admin login verification'
+        });
+        res.json({ success: true, message: 'Verification code sent to your email.' });
+    } catch (error) {
+        console.error('Send OTP error:', error);
+        res.status(500).json({ success: false, message: error.message || 'Failed to send code.' });
+    }
+});
 
-        // Create JWT token
+// @route   POST /api/admin/verify-otp
+// @desc    Verify OTP and return admin JWT
+// @access  Public
+router.post('/verify-otp', loginLimiter, async (req, res) => {
+    try {
+        const email = (req.body.email || '').trim().toLowerCase();
+        const otp = (req.body.otp || '').trim();
+        if (!validator.isEmail(email) || email !== ALLOWED_ADMIN_EMAIL) {
+            return res.status(400).json({ success: false, message: 'Invalid email.' });
+        }
+        if (!otp || otp.length !== 6) {
+            return res.status(400).json({ success: false, message: 'Please enter the 6-digit code.' });
+        }
+        if (!consumeAdminOtp(email, otp)) {
+            return res.status(400).json({ success: false, message: 'Invalid or expired code. Request a new one.' });
+        }
         const token = jwt.sign(
-            { id: admin._id, username: admin.username },
+            { email, type: 'admin' },
             process.env.JWT_SECRET,
             { expiresIn: '24h' }
         );
-
         res.json({
             success: true,
             message: 'Login successful',
             token,
-            admin: {
-                username: admin.username
-            }
+            admin: { email }
         });
     } catch (error) {
-        console.error('Login error:', error);
-        res.status(500).json({
-            success: false,
-            message: 'Server error during login'
-        });
+        console.error('Verify OTP error:', error);
+        res.status(500).json({ success: false, message: error.message || 'Verification failed.' });
     }
 });
 

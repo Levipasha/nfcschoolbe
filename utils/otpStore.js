@@ -44,10 +44,35 @@ function consumeOtp(email, otp) {
     return true;
 }
 
+// Admin OTP (separate key prefix to avoid conflict with artist OTPs)
+const ADMIN_PREFIX = 'admin:';
+function adminKey(email) {
+    return ADMIN_PREFIX + key(email);
+}
+function setAdminOtp(email, otp) {
+    const k = adminKey(email);
+    if (!k || k === ADMIN_PREFIX) return null;
+    store.set(k, { otp, expiresAt: Date.now() + OTP_EXPIRY_MS });
+    return otp;
+}
+function consumeAdminOtp(email, otp) {
+    const k = adminKey(email);
+    const entry = store.get(k);
+    if (!entry || entry.otp !== String(otp).trim()) return false;
+    if (Date.now() > entry.expiresAt) {
+        store.delete(k);
+        return false;
+    }
+    store.delete(k);
+    return true;
+}
+
 module.exports = {
     generateOtp,
     setOtp,
     getOtp,
     consumeOtp,
+    setAdminOtp,
+    consumeAdminOtp,
     OTP_EXPIRY_MS
 };

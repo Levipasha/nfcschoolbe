@@ -36,9 +36,10 @@ function isConfigured() {
 /**
  * Branded HTML template for OTP email (matches landing page theme: dark, blue accent).
  * @param {string} otp - 6-digit OTP
+ * @param {string} subtitle - Optional subtitle (default: "Verify your artist profile")
  * @returns {string} HTML body
  */
-function getOtpEmailHtml(otp) {
+function getOtpEmailHtml(otp, subtitle = 'Verify your artist profile') {
     const safeOtp = String(otp).replace(/[^0-9]/g, '');
     return `
 <!DOCTYPE html>
@@ -63,7 +64,7 @@ function getOtpEmailHtml(otp) {
                 </tr>
                 <tr>
                   <td style="text-align: center; padding-bottom: 24px;">
-                    <p style="margin: 0; font-size: 15px; color: rgba(255,255,255,0.75); line-height: 1.5;">Verify your artist profile</p>
+                    <p style="margin: 0; font-size: 15px; color: rgba(255,255,255,0.75); line-height: 1.5;">${subtitle}</p>
                   </td>
                 </tr>
                 <tr>
@@ -104,20 +105,24 @@ function getOtpEmailHtml(otp) {
  * Send OTP email (branded HTML matching landing page theme).
  * @param {string} to - Recipient email
  * @param {string} otp - 6-digit OTP
+ * @param {object} opts - Optional: { subject, textPrefix }
  * @returns {Promise<void>}
  */
-async function sendOtpEmail(to, otp) {
+async function sendOtpEmail(to, otp, opts = {}) {
     const trans = getTransporter();
     if (!trans) {
         throw new Error('SMTP is not configured. Set SMTP_HOST, SMTP_USER, SMTP_PASS in .env');
     }
     const from = process.env.SMTP_FROM || process.env.SMTP_USER;
-    const html = getOtpEmailHtml(otp);
+    const subtitle = opts.subtitle || 'Verify your artist profile';
+    const html = getOtpEmailHtml(otp, subtitle);
+    const subject = opts.subject || 'Your verification code – Artist profile';
+    const textPrefix = opts.textPrefix || 'Your artist profile verification code';
     await trans.sendMail({
         from: from || 'noreply@nfc.local',
         to,
-        subject: 'Your verification code – Artist profile',
-        text: `Your artist profile verification code is: ${otp}. It expires in 10 minutes. If you didn't request this, you can ignore this email.`,
+        subject,
+        text: `${textPrefix} is: ${otp}. It expires in 10 minutes. If you didn't request this, you can ignore this email.`,
         html
     });
 }

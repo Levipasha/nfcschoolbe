@@ -44,11 +44,12 @@ function initializeWebSocket(server, corsOptions) {
         // Join admin room if authenticated
         if (socket.isAuthenticated) {
             socket.join('admin-room');
-            console.log('👤 Admin joined admin-room:', socket.admin.username);
+            console.log('👤 Admin joined admin-room:', socket.admin.email || socket.admin.username);
 
             // Send welcome message
             socket.emit('admin:connected', {
                 message: 'Connected to admin channel',
+                email: socket.admin.email,
                 username: socket.admin.username
             });
         }
@@ -135,7 +136,7 @@ function initializeWebSocket(server, corsOptions) {
         socket.on('disconnect', (reason) => {
             console.log('🔌 WebSocket disconnected:', socket.id, reason);
             if (socket.isAuthenticated) {
-                console.log('👤 Admin left admin-room:', socket.admin?.username);
+                console.log('👤 Admin left admin-room:', socket.admin?.email || socket.admin?.username);
             }
         });
 

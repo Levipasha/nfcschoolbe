@@ -71,7 +71,7 @@ const seedDatabase = async () => {
         console.log('✅ Database seeding completed successfully!');
         console.log('\n💡 Tips:');
         console.log('   - Use the Student IDs above to test the frontend');
-        console.log('   - Login to admin panel with credentials from .env file');
+        console.log('   - Login to admin panel with skywebdevelopers123@gmail.com (OTP sent to email)');
         console.log('   - You can run this script again to reset the database\n');
 
         process.exit(0);
