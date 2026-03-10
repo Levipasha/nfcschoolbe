@@ -4,6 +4,7 @@ const validator = require('validator');
 console.log('Artist routes loading...');
 const router = express.Router();
 const Artist = require('../models/Artist');
+const GeneralProfile = require('../models/GeneralProfile');
 const Session = require('../models/Session');
 const multer = require('multer');
 const { uploadBuffer } = require('../utils/cloudinary');
@@ -26,6 +27,26 @@ const upload = multer({
 
 // Test route
 router.get('/test-route', (req, res) => res.json({ success: true, message: 'Artist route cluster reached' }));
+
+// @route   POST /api/artist/check-account
+// @desc    Check if a fully setup profile exists for an email (Artist or General)
+// @access  Public
+router.post('/check-account', async (req, res) => {
+    try {
+        const email = (req.body.email || '').toLowerCase().trim();
+        if (!validator.isEmail(email)) {
+            return res.status(400).json({ success: false, exists: false, message: 'Invalid email.' });
+        }
+        const re = new RegExp('^' + email.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '$', 'i');
+        const [artistCount, generalCount] = await Promise.all([
+            Artist.countDocuments({ isActive: true, isSetup: true, $or: [{ ownerEmail: re }, { email: re }] }),
+            GeneralProfile.countDocuments({ ownerEmail: re })
+        ]);
+        res.json({ success: true, exists: (artistCount + generalCount) > 0 });
+    } catch (err) {
+        res.status(500).json({ success: false, exists: false });
+    }
+});
 
 // @route   POST /api/artist/upload-photo
 // @desc    Upload artist profile/gallery photo to Cloudinary
@@ -75,17 +96,51 @@ router.post('/send-otp', async (req, res) => {
         }
         const normalized = email.toLowerCase().trim();
         const re = new RegExp('^' + normalized.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '$', 'i');
-        const hasProfile = await Artist.findOne({
-            isActive: true,
-            $or: [ { ownerEmail: re }, { email: re } ]
-        });
-        if (!hasProfile) {
-            return res.status(404).json({ success: false, message: 'No artist profile found with this email. Use the email linked to your artist card.' });
+
+        // Ensure mode is captured correctly, default to 'login' if missing to be safe
+        const mode = (req.body.mode || 'login').toLowerCase().trim();
+
+        // Count documents instead of finding a full object to be sure
+        const [artistCount, generalCount] = await Promise.all([
+            Artist.countDocuments({
+                isActive: true,
+                isSetup: true, // Only fully setup artists count as "existing" for login/signup choice
+                $or: [{ ownerEmail: re }, { email: re }]
+            }),
+            GeneralProfile.countDocuments({ ownerEmail: re })
+        ]);
+
+        const accountExists = (artistCount + generalCount) > 0;
+
+        console.log(`[send-otp] Email: ${normalized}, Mode: ${mode}, Exists: ${accountExists}`);
+
+        // Validation based on mode
+        if (mode === 'login' && !accountExists) {
+            return res.status(403).json({
+                success: false,
+                exists: false,
+                error_type: 'NO_ACCOUNT',
+                message: 'No profile has been created on this mail. Please sign up.'
+            });
         }
+
+        if (mode === 'signup' && accountExists) {
+            return res.status(403).json({
+                success: false,
+                exists: true,
+                error_type: 'ACCOUNT_EXISTS',
+                message: 'An account already exists with this mail. Please log in instead.'
+            });
+        }
+
         const otp = generateOtp();
         setOtp(normalized, otp);
         await sendOtpEmail(email, otp);
-        res.json({ success: true, message: 'Verification code sent to your email.' });
+        res.json({
+            success: true,
+            message: 'Verification code sent to your email.',
+            exists: accountExists
+        });
     } catch (err) {
         console.error('Send OTP error:', err);
         res.status(500).json({ success: false, message: err.message || 'Failed to send code.' });
@@ -99,16 +154,41 @@ router.post('/verify-otp', async (req, res) => {
     try {
         const email = (req.body.email || '').trim();
         const otp = (req.body.otp || '').trim();
+        const mode = (req.body.mode || 'login').toLowerCase().trim();
+
         if (!validator.isEmail(email)) {
             return res.status(400).json({ success: false, message: 'Invalid email.' });
         }
         if (!otp || otp.length !== 6) {
             return res.status(400).json({ success: false, message: 'Please enter the 6-digit code.' });
         }
-        const normalized = email.toLowerCase();
+        const normalized = email.toLowerCase().trim();
+
+        // 1. Verify OTP first
         if (!consumeOtp(normalized, otp)) {
             return res.status(400).json({ success: false, message: 'Invalid or expired code. Request a new one.' });
         }
+
+        // 2. Strict existence check if mode is login
+        const re = new RegExp('^' + normalized.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '$', 'i');
+        const [artistCount, generalCount] = await Promise.all([
+            Artist.countDocuments({
+                isActive: true,
+                isSetup: true,
+                $or: [{ ownerEmail: re }, { email: re }]
+            }),
+            GeneralProfile.countDocuments({ ownerEmail: re })
+        ]);
+        const accountExists = (artistCount + generalCount) > 0;
+
+        if (mode === 'login' && !accountExists) {
+            return res.status(403).json({
+                success: false,
+                error_type: 'NO_ACCOUNT',
+                message: 'No profile found for this email. Verification aborted.'
+            });
+        }
+
         const secret = process.env.JWT_SECRET;
         if (!secret) {
             return res.status(500).json({ success: false, message: 'Server auth not configured.' });
@@ -448,11 +528,7 @@ router.delete('/:id', async (req, res) => {
             return next();
         }
 
-        const artist = await Artist.findByIdAndUpdate(
-            req.params.id,
-            { isActive: false },
-            { new: true }
-        );
+        const artist = await Artist.findByIdAndDelete(req.params.id);
 
         if (!artist) {
             return res.status(404).json({
@@ -461,9 +537,12 @@ router.delete('/:id', async (req, res) => {
             });
         }
 
+        // Optional: Clean up related sessions if you want true "erased all details"
+        await Session.deleteMany({ artistId: artist.artistId }).catch(e => console.error('Session cleanup error:', e));
+
         res.json({
             success: true,
-            message: 'Artist deleted successfully',
+            message: 'Artist profile and all details erased successfully.',
             data: artist
         });
     } catch (error) {
@@ -502,13 +581,34 @@ router.get('/stats/overview', async (req, res) => {
     }
 });
 
-// Quick create new artist (empty profile for NFC)
+// Quick create new artist (empty profile for NFC – admin panel)
+// Mirrors the barebones creation logic used by POST /api/artist/my-profiles,
+// but without Firebase auth. Admin can optionally pass `artistId`, `name`, `email`.
 router.post('/quick-create', async (req, res) => {
     try {
+        const { artistId, name, email } = req.body || {};
+
+        if (artistId) {
+            const existing = await Artist.findOne({ artistId });
+            if (existing) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Artist ID already taken'
+                });
+            }
+        }
+
+        const adminEmail = (email || '').toLowerCase().trim();
+
         const artist = new Artist({
-            name: 'New Artist',
-            isSetup: false
+            artistId: artistId || `admin-${Date.now()}`,
+            name: name || 'New Artist',
+            ownerEmail: adminEmail || undefined,
+            email: adminEmail || undefined,
+            isSetup: false,
+            isActive: true
         });
+
         await artist.save();
 
         res.status(201).json({
@@ -518,7 +618,7 @@ router.post('/quick-create', async (req, res) => {
         });
     } catch (error) {
         console.error('Error quick creating artist:', error);
-        res.status(400).json({
+        res.status(500).json({
             success: false,
             message: 'Error creating artist container',
             error: error.message
@@ -544,9 +644,36 @@ router.get('/my-profiles', firebaseAuth, async (req, res) => {
         } else {
             query.ownerUid = uid;
         }
-        const artists = await Artist.find(query)
+        let artists = await Artist.find(query)
             .sort({ updatedAt: -1 })
             .lean();
+
+        // Direct Registration: If no artist profile exists and user logged in via Firebase, auto-create one
+        if (artists.length === 0 && (uid || email)) {
+            console.log(`Auto-registering new artist profile for ${email}...`);
+            const newArtist = new Artist({
+                name: req.firebaseUser.name || 'New Artist',
+                email: email,
+                ownerEmail: email,
+                ownerUid: uid,
+                isSetup: false
+            });
+            await newArtist.save();
+            artists = [newArtist.toObject ? newArtist.toObject() : newArtist];
+        } else if (artists.length > 0 && uid) {
+            // Maintenance: If profiles exist but some don't have the UID linked yet (only email match), link it
+            const unlinked = artists.filter(a => !a.ownerUid && a.ownerEmail === email);
+            if (unlinked.length > 0) {
+                console.log(`Linking UID to ${unlinked.length} existing profiles for ${email}...`);
+                await Artist.updateMany(
+                    { _id: { $in: unlinked.map(a => a._id) } },
+                    { $set: { ownerUid: uid } }
+                );
+                // Refresh list
+                artists = await Artist.find(query).sort({ updatedAt: -1 }).lean();
+            }
+        }
+
         res.json({
             success: true,
             count: artists.length,
@@ -559,6 +686,39 @@ router.get('/my-profiles', firebaseAuth, async (req, res) => {
             message: 'Error fetching your artist profiles',
             error: error.message
         });
+    }
+});
+
+// POST /api/artist/my-profiles - Create a new barebones artist profile
+router.post('/my-profiles', firebaseAuth, async (req, res) => {
+    try {
+        const email = (req.firebaseUser.email || '').toLowerCase().trim();
+        const uid = req.firebaseUser.uid || null;
+
+        const { artistId, name } = req.body;
+        
+        if (artistId) {
+            const existing = await Artist.findOne({ artistId });
+            if (existing) {
+                return res.status(400).json({ success: false, message: 'Username already taken' });
+            }
+        }
+        
+        const artist = new Artist({
+            artistId: artistId || `user-${Date.now()}`,
+            name: name || 'New Artist',
+            ownerEmail: email,
+            ownerUid: uid,
+            email: email, // Set contact email to same as login email initially
+            isSetup: false,
+            isActive: true
+        });
+        
+        await artist.save();
+        res.json({ success: true, data: artist });
+    } catch (error) {
+        console.error('Error creating profile:', error);
+        res.status(500).json({ success: false, message: 'Server error', error: error.message });
     }
 });
 
@@ -592,6 +752,7 @@ router.put('/me/:artistId', firebaseAuth, async (req, res) => {
         }
 
         const updateData = {
+            artistId: req.body.artistId,
             name: req.body.name,
             bio: req.body.bio,
             photo: req.body.photo,
@@ -615,6 +776,10 @@ router.put('/me/:artistId', firebaseAuth, async (req, res) => {
             instagramAccountBio: req.body.instagramAccountBio,
             badgeOverrides: req.body.badgeOverrides,
             profileTheme: req.body.profileTheme,
+            profileFont: req.body.profileFont,
+            bioFont: req.body.bioFont,
+            isSetup: req.body.isSetup !== undefined ? req.body.isSetup : artist.isSetup,
+            artLinks: req.body.artLinks,
             ownerEmail: email || artist.ownerEmail,
             ownerUid: uid || artist.ownerUid,
             updatedAt: Date.now()
@@ -686,6 +851,8 @@ router.put('/setup/:token', async (req, res) => {
             instagramFollowing: req.body.instagramFollowing,
             instagramAccountBio: req.body.instagramAccountBio,
             profileTheme: req.body.profileTheme,
+            profileFont: req.body.profileFont,
+            bioFont: req.body.bioFont,
             ownerEmail: req.body.ownerEmail,
             ownerUid: req.body.ownerUid,
             isSetup: true,

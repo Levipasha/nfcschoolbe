@@ -1,7 +1,30 @@
 const express = require('express');
 const router = express.Router();
+const multer = require('multer');
 const GeneralProfile = require('../models/GeneralProfile');
 const { firebaseAuth } = require('../middleware/firebaseAuth');
+const { uploadBuffer } = require('../utils/cloudinary');
+
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
+
+// @route   POST /api/general-profile/upload-pdf
+// @desc    Upload menu PDF to Cloudinary (for restaurant profiles)
+// @access  Private (Firebase)
+router.post('/upload-pdf', firebaseAuth, upload.single('file'), async (req, res) => {
+    try {
+        if (!req.file || !req.file.buffer) {
+            return res.status(400).json({ success: false, message: 'No file uploaded' });
+        }
+        const result = await uploadBuffer(req.file.buffer, {
+            folder: 'nfc/restaurant-menus',
+            resource_type: 'raw'
+        });
+        res.json({ success: true, url: result.secure_url });
+    } catch (error) {
+        console.error('PDF upload error:', error);
+        res.status(500).json({ success: false, message: error.message || 'Upload failed' });
+    }
+});
 
 // @route   GET /api/general-profile/u/:username
 // @desc    Get public profile by username (for shareable link)
@@ -24,7 +47,10 @@ router.get('/u/:username', async (req, res) => {
                 title: profile.title,
                 bio: profile.bio,
                 photo: profile.photo,
+                menuPdf: profile.menuPdf || '',
                 theme: profile.theme,
+                font: profile.font || 'outfit',
+                bioFont: profile.bioFont || profile.font || 'outfit',
                 links: profile.links || [],
                 social: profile.social || {}
             }
@@ -59,6 +85,8 @@ router.get('/me', firebaseAuth, async (req, res) => {
                 bio: profile.bio,
                 photo: profile.photo,
                 theme: profile.theme,
+                font: profile.font || 'outfit',
+                bioFont: profile.bioFont || profile.font || 'outfit',
                 links: profile.links || [],
                 social: profile.social || {}
             }
@@ -78,7 +106,7 @@ router.get('/me', firebaseAuth, async (req, res) => {
 router.post('/', firebaseAuth, async (req, res) => {
     try {
         const { uid, email } = req.firebaseUser;
-        const { username, name, title, bio, photo, theme, links, social } = req.body;
+        const { username, name, title, bio, photo, menuPdf, theme, font, bioFont, links, social } = req.body;
 
         const existing = await GeneralProfile.findOne({
             $or: [{ ownerUid: uid }, { ownerEmail: email }]
@@ -112,7 +140,10 @@ router.post('/', firebaseAuth, async (req, res) => {
             title: title || '',
             bio: bio || '',
             photo: photo || '',
+            menuPdf: menuPdf || '',
             theme: theme || 'mint',
+            font: font || 'outfit',
+            bioFont: bioFont || font || 'outfit',
             links: Array.isArray(links) ? links : [],
             social: social || {},
             ownerEmail: email,
@@ -127,7 +158,10 @@ router.post('/', firebaseAuth, async (req, res) => {
                 title: profile.title,
                 bio: profile.bio,
                 photo: profile.photo,
+                menuPdf: profile.menuPdf || '',
                 theme: profile.theme,
+                font: profile.font || 'outfit',
+                bioFont: profile.bioFont || profile.font || 'outfit',
                 links: profile.links,
                 social: profile.social
             }
@@ -147,7 +181,7 @@ router.post('/', firebaseAuth, async (req, res) => {
 router.put('/me', firebaseAuth, async (req, res) => {
     try {
         const { uid, email } = req.firebaseUser;
-        const { username, name, title, bio, photo, theme, links, social } = req.body;
+        const { username, name, title, bio, photo, theme, font, bioFont, links, social } = req.body;
 
         const profile = await GeneralProfile.findOne({
             $or: [{ ownerUid: uid }, { ownerEmail: email }]
@@ -165,6 +199,8 @@ router.put('/me', firebaseAuth, async (req, res) => {
         if (bio !== undefined) updates.bio = bio;
         if (photo !== undefined) updates.photo = photo;
         if (theme !== undefined) updates.theme = theme;
+        if (font !== undefined) updates.font = font;
+        if (bioFont !== undefined) updates.bioFont = bioFont;
         if (Array.isArray(links)) updates.links = links;
         if (social && typeof social === 'object') updates.social = { ...profile.social, ...social };
 
@@ -199,7 +235,10 @@ router.put('/me', firebaseAuth, async (req, res) => {
                 title: profile.title,
                 bio: profile.bio,
                 photo: profile.photo,
+                menuPdf: profile.menuPdf || '',
                 theme: profile.theme,
+                font: profile.font || 'outfit',
+                bioFont: profile.bioFont || profile.font || 'outfit',
                 links: profile.links,
                 social: profile.social
             }
@@ -209,6 +248,34 @@ router.put('/me', firebaseAuth, async (req, res) => {
         res.status(500).json({
             success: false,
             message: error.message || 'Server error'
+        });
+    }
+});
+
+// @route   DELETE /api/general-profile/me
+// @desc    Delete current user's general profile
+// @access  Private (Firebase)
+router.delete('/me', firebaseAuth, async (req, res) => {
+    try {
+        const { uid, email } = req.firebaseUser;
+        const profile = await GeneralProfile.findOneAndDelete({
+            $or: [{ ownerUid: uid }, { ownerEmail: email }]
+        });
+        if (!profile) {
+            return res.status(404).json({
+                success: false,
+                message: 'Profile not found.'
+            });
+        }
+        res.json({
+            success: true,
+            message: 'General profile erased successfully.'
+        });
+    } catch (error) {
+        console.error('Error deleting general profile:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Server error during deletion.'
         });
     }
 });

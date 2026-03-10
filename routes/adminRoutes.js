@@ -396,6 +396,136 @@ router.put('/artists/:id', authMiddleware, adminLimiter, async (req, res) => {
     }
 });
 
+// ---------- General Profiles (admin: list, get, create, update, delete) ----------
+const GeneralProfile = require('../models/GeneralProfile');
+
+router.get('/general-profiles', authMiddleware, adminLimiter, async (req, res) => {
+    try {
+        const { search = '' } = req.query;
+        const query = {};
+        if (search) {
+            query.$or = [
+                { name: { $regex: search, $options: 'i' } },
+                { username: { $regex: search, $options: 'i' } },
+                { title: { $regex: search, $options: 'i' } },
+                { ownerEmail: { $regex: search, $options: 'i' } }
+            ];
+        }
+        const profiles = await GeneralProfile.find(query).sort({ createdAt: -1 });
+        res.json({ success: true, data: profiles, total: profiles.length });
+    } catch (error) {
+        console.error('Error fetching general profiles:', error);
+        res.status(500).json({ success: false, message: 'Error fetching general profiles' });
+    }
+});
+
+router.get('/general-profiles/stats', authMiddleware, adminLimiter, async (req, res) => {
+    try {
+        const totalProfiles = await GeneralProfile.countDocuments();
+        const recentProfiles = await GeneralProfile.find()
+            .sort({ createdAt: -1 })
+            .limit(5)
+            .select('username name createdAt');
+        res.json({ success: true, data: { totalProfiles, recentProfiles } });
+    } catch (error) {
+        console.error('Error fetching general profile stats:', error);
+        res.status(500).json({ success: false, message: 'Error fetching stats' });
+    }
+});
+
+router.get('/general-profiles/:id', authMiddleware, adminLimiter, async (req, res) => {
+    try {
+        const profile = await GeneralProfile.findById(req.params.id);
+        if (!profile) {
+            return res.status(404).json({ success: false, message: 'Profile not found' });
+        }
+        res.json({ success: true, data: profile });
+    } catch (error) {
+        console.error('Error fetching general profile:', error);
+        res.status(500).json({ success: false, message: 'Error fetching profile' });
+    }
+});
+
+router.post('/general-profiles', authMiddleware, adminLimiter, async (req, res) => {
+    try {
+        const { username, name, title, bio, photo, theme, font, bioFont, links, social } = req.body;
+        const normalizedUsername = (username || '').toLowerCase().trim().replace(/\s+/g, '_');
+        if (!normalizedUsername || !/^[a-z0-9_-]+$/.test(normalizedUsername)) {
+            return res.status(400).json({ success: false, message: 'Username must contain only letters, numbers, underscores, and hyphens.' });
+        }
+        const taken = await GeneralProfile.findOne({ username: normalizedUsername });
+        if (taken) {
+            return res.status(400).json({ success: false, message: 'Username is already taken.' });
+        }
+        const profile = await GeneralProfile.create({
+            username: normalizedUsername,
+            name: name || '',
+            title: title || '',
+            bio: bio || '',
+            photo: photo || '',
+            theme: theme || 'mint',
+            font: font || 'outfit',
+            bioFont: bioFont || font || 'outfit',
+            links: Array.isArray(links) ? links : [],
+            social: social || {}
+        });
+        res.json({ success: true, data: profile });
+    } catch (error) {
+        console.error('Error creating general profile:', error);
+        res.status(500).json({ success: false, message: error.message || 'Error creating profile' });
+    }
+});
+
+router.put('/general-profiles/:id', authMiddleware, adminLimiter, async (req, res) => {
+    try {
+        const profile = await GeneralProfile.findById(req.params.id);
+        if (!profile) {
+            return res.status(404).json({ success: false, message: 'Profile not found' });
+        }
+        const { username, name, title, bio, photo, theme, font, bioFont, links, social } = req.body;
+        if (username !== undefined) {
+            const normalizedUsername = (username || '').toLowerCase().trim().replace(/\s+/g, '_');
+            if (!normalizedUsername || !/^[a-z0-9_-]+$/.test(normalizedUsername)) {
+                return res.status(400).json({ success: false, message: 'Invalid username format.' });
+            }
+            if (normalizedUsername !== profile.username) {
+                const taken = await GeneralProfile.findOne({ username: normalizedUsername });
+                if (taken) {
+                    return res.status(400).json({ success: false, message: 'Username is already taken.' });
+                }
+                profile.username = normalizedUsername;
+            }
+        }
+        if (name !== undefined) profile.name = name;
+        if (title !== undefined) profile.title = title;
+        if (bio !== undefined) profile.bio = bio;
+        if (photo !== undefined) profile.photo = photo;
+        if (theme !== undefined) profile.theme = theme;
+        if (font !== undefined) profile.font = font;
+        if (bioFont !== undefined) profile.bioFont = bioFont;
+        if (Array.isArray(links)) profile.links = links;
+        if (social && typeof social === 'object') profile.social = { ...profile.social.toObject?.() || profile.social, ...social };
+        await profile.save();
+        res.json({ success: true, message: 'Profile updated successfully', data: profile });
+    } catch (error) {
+        console.error('Error updating general profile:', error);
+        res.status(500).json({ success: false, message: error.message || 'Error updating profile' });
+    }
+});
+
+router.delete('/general-profiles/:id', authMiddleware, adminLimiter, async (req, res) => {
+    try {
+        const profile = await GeneralProfile.findByIdAndDelete(req.params.id);
+        if (!profile) {
+            return res.status(404).json({ success: false, message: 'Profile not found' });
+        }
+        res.json({ success: true, message: 'General profile deleted successfully' });
+    } catch (error) {
+        console.error('Error deleting general profile:', error);
+        res.status(500).json({ success: false, message: 'Error deleting profile' });
+    }
+});
+
 // @route   GET /api/admin/stats
 // @desc    Get dashboard statistics
 // @access  Protected

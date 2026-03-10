@@ -157,6 +157,21 @@ const artistSchema = new mongoose.Schema({
         trim: true,
         default: 'mono', // mono, classic, neon, minimal etc.
     },
+    profileFont: {
+        type: String,
+        trim: true,
+        default: 'outfit'
+    },
+    bioFont: {
+        type: String,
+        trim: true,
+        default: 'outfit'
+    },
+    // External art platform links (Behance, ArtStation, Etsy, etc.)
+    artLinks: {
+        type: mongoose.Schema.Types.Mixed,
+        default: () => ({})
+    },
     // Secure access token for NFC tag
     accessToken: {
         type: String,

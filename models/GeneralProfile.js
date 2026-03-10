@@ -22,11 +22,21 @@ const generalProfileSchema = new mongoose.Schema({
     title: { type: String, trim: true, default: '' }, // e.g. "Company owner"
     bio: { type: String, trim: true, default: '' },
     photo: { type: String, trim: true, default: '' },
+    menuPdf: { type: String, trim: true, default: '' },
     theme: {
         type: String,
         trim: true,
-        default: 'mint',
-        enum: ['mono', 'gradient', 'brown', 'beige', 'green', 'grey', 'wood', 'purple', 'mint']
+        default: 'mint'
+    },
+    font: {
+        type: String,
+        trim: true,
+        default: 'outfit'
+    },
+    bioFont: {
+        type: String,
+        trim: true,
+        default: 'outfit'
     },
     links: [linkSchema],
     social: {
