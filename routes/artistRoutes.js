@@ -303,6 +303,64 @@ router.get('/profile', async (req, res) => {
     }
 });
 
+// @route   GET /api/artist/public/:artistId
+// @desc    Public, read-only artist profile used by /artist?id=<id> on landing page
+// @access  Public
+router.get('/public/:artistId', async (req, res) => {
+    try {
+        const { artistId } = req.params;
+
+        if (!artistId) {
+            return res.status(400).json({
+                success: false,
+                message: 'No artist ID provided'
+            });
+        }
+
+        // Flexible lookup: first by artistId, then support numeric IDs similar to /profile
+        let artist = await Artist.findOne({ artistId, isActive: true });
+
+        if (!artist && /^\d+$/.test(artistId)) {
+            const prefixedId = `AT-${artistId.padStart(2, '0')}`;
+            artist = await Artist.findOne({ artistId: prefixedId, isActive: true });
+        }
+
+        if (!artist) {
+            return res.status(404).json({
+                success: false,
+                message: 'Artist not found',
+                error: 'Artist not found'
+            });
+        }
+
+        res.json({
+            success: true,
+            data: {
+                artistId: artist.artistId,
+                name: artist.name,
+                photo: artist.photo,
+                bio: artist.bio,
+                specialization: artist.specialization,
+                website: artist.website,
+                instagram: artist.instagram,
+                facebook: artist.facebook,
+                twitter: artist.twitter,
+                linkedin: artist.linkedin,
+                whatsapp: artist.whatsapp,
+                profileTheme: artist.profileTheme,
+                profileFont: artist.profileFont
+            }
+        });
+    } catch (error) {
+        console.error('Error fetching public artist profile:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error fetching public artist profile',
+            error: error.message
+        });
+    }
+});
+
 // Get single artist by MongoDB ID
 router.get('/:id', async (req, res, next) => {
     try {
