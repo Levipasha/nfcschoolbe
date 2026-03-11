@@ -339,6 +339,7 @@ router.get('/public/:artistId', async (req, res) => {
                 artistId: artist.artistId,
                 name: artist.name,
                 photo: artist.photo,
+                backgroundPhoto: artist.backgroundPhoto,
                 bio: artist.bio,
                 specialization: artist.specialization,
                 website: artist.website,
@@ -347,6 +348,10 @@ router.get('/public/:artistId', async (req, res) => {
                 twitter: artist.twitter,
                 linkedin: artist.linkedin,
                 whatsapp: artist.whatsapp,
+                email: artist.email,
+                phone: artist.phone,
+                gallery: artist.gallery || [],
+                artLinks: artist.artLinks || [],
                 profileTheme: artist.profileTheme,
                 profileFont: artist.profileFont
             }
