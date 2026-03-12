@@ -725,19 +725,8 @@ router.get('/my-profiles', firebaseAuth, async (req, res) => {
             .sort({ updatedAt: -1 })
             .lean();
 
-        // Direct Registration: If no artist profile exists and user logged in via Firebase, auto-create one
-        if (artists.length === 0 && (uid || email)) {
-            console.log(`Auto-registering new artist profile for ${email}...`);
-            const newArtist = new Artist({
-                name: req.firebaseUser.name || 'New Artist',
-                email: email,
-                ownerEmail: email,
-                ownerUid: uid,
-                isSetup: false
-            });
-            await newArtist.save();
-            artists = [newArtist.toObject ? newArtist.toObject() : newArtist];
-        } else if (artists.length > 0 && uid) {
+        // If profiles exist but some don't have the UID linked yet (only email match), link it
+        if (artists.length > 0 && uid) {
             // Maintenance: If profiles exist but some don't have the UID linked yet (only email match), link it
             const unlinked = artists.filter(a => !a.ownerUid && a.ownerEmail === email);
             if (unlinked.length > 0) {
