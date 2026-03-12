@@ -59,6 +59,7 @@ const artistSchema = new mongoose.Schema({
         lowercase: true,
         default: ''
     },
+    // Primary link fields (used for icon grid on public profile)
     website: {
         type: String,
         trim: true,
@@ -85,6 +86,76 @@ const artistSchema = new mongoose.Schema({
         default: ''
     },
     linkedin: {
+        type: String,
+        trim: true,
+        default: ''
+    },
+    youtube: {
+        type: String,
+        trim: true,
+        default: ''
+    },
+    tiktok: {
+        type: String,
+        trim: true,
+        default: ''
+    },
+    spotify: {
+        type: String,
+        trim: true,
+        default: ''
+    },
+    snapchat: {
+        type: String,
+        trim: true,
+        default: ''
+    },
+    telegram: {
+        type: String,
+        trim: true,
+        default: ''
+    },
+    reddit: {
+        type: String,
+        trim: true,
+        default: ''
+    },
+    threads: {
+        type: String,
+        trim: true,
+        default: ''
+    },
+    discord: {
+        type: String,
+        trim: true,
+        default: ''
+    },
+    portfolio: {
+        type: String,
+        trim: true,
+        default: ''
+    },
+    pinterest: {
+        type: String,
+        trim: true,
+        default: ''
+    },
+    medium: {
+        type: String,
+        trim: true,
+        default: ''
+    },
+    twitch: {
+        type: String,
+        trim: true,
+        default: ''
+    },
+    quora: {
+        type: String,
+        trim: true,
+        default: ''
+    },
+    github: {
         type: String,
         trim: true,
         default: ''
