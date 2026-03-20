@@ -10,6 +10,8 @@ const { adminLimiter, loginLimiter } = require('../middleware/rateLimiter');
 const { validateStudentData } = require('../middleware/validator');
 const { generateOtp, setAdminOtp, consumeAdminOtp } = require('../utils/otpStore');
 const { sendOtpEmail, isConfigured: isSmtpConfigured } = require('../utils/sendMail');
+const multer = require('multer');
+const { uploadBuffer } = require('../utils/cloudinary');
 
 // Only this email is allowed for admin login (no passwords, no usernames)
 const ALLOWED_ADMIN_EMAIL = 'skywebdevelopers123@gmail.com';
@@ -398,10 +400,64 @@ router.put('/artists/:id', authMiddleware, adminLimiter, async (req, res) => {
 
 // ---------- General Profiles (admin: list, get, create, update, delete) ----------
 const GeneralProfile = require('../models/GeneralProfile');
+const adminUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
+
+function normalizeProfileType(raw) {
+    const v = String(raw || '').toLowerCase().trim();
+    if (v === 'restaurant' || v === 'resturent' || v === 'resturant') return 'restaurant';
+    return 'general';
+}
+
+function buildTypeQueryCond(requestedType) {
+    if (requestedType === 'restaurant') {
+        return {
+            $or: [
+                { profileType: 'restaurant' },
+                {
+                    $and: [
+                        { $or: [{ profileType: { $exists: false } }, { profileType: null }] },
+                        { menuPdf: { $exists: true, $ne: '' } }
+                    ]
+                }
+            ]
+        };
+    }
+
+    return {
+        $or: [
+            { profileType: 'general' },
+            {
+                $and: [
+                    { $or: [{ profileType: { $exists: false } }, { profileType: null }] },
+                    { $or: [{ menuPdf: { $exists: false } }, { menuPdf: '' }] }
+                ]
+            }
+        ]
+    };
+}
+
+// @route   POST /api/admin/general-profiles/upload-pdf
+// @desc    Upload restaurant menu PDF to Cloudinary (admin)
+// @access  Protected
+router.post('/general-profiles/upload-pdf', authMiddleware, adminLimiter, adminUpload.single('file'), async (req, res) => {
+    try {
+        if (!req.file || !req.file.buffer) {
+            return res.status(400).json({ success: false, message: 'No file uploaded' });
+        }
+        const result = await uploadBuffer(req.file.buffer, {
+            folder: 'nfc/restaurant-menus',
+            resource_type: 'raw'
+        });
+        res.json({ success: true, url: result.secure_url });
+    } catch (error) {
+        console.error('Admin PDF upload error:', error);
+        res.status(500).json({ success: false, message: error.message || 'Upload failed' });
+    }
+});
 
 router.get('/general-profiles', authMiddleware, adminLimiter, async (req, res) => {
     try {
-        const { search = '' } = req.query;
+        const { search = '', type } = req.query;
         const query = {};
         if (search) {
             query.$or = [
@@ -411,6 +467,13 @@ router.get('/general-profiles', authMiddleware, adminLimiter, async (req, res) =
                 { ownerEmail: { $regex: search, $options: 'i' } }
             ];
         }
+
+        if (type) {
+            const requestedType = normalizeProfileType(type);
+            query.$and = query.$and || [];
+            query.$and.push(buildTypeQueryCond(requestedType));
+        }
+
         const profiles = await GeneralProfile.find(query).sort({ createdAt: -1 });
         res.json({ success: true, data: profiles, total: profiles.length });
     } catch (error) {
@@ -448,7 +511,8 @@ router.get('/general-profiles/:id', authMiddleware, adminLimiter, async (req, re
 
 router.post('/general-profiles', authMiddleware, adminLimiter, async (req, res) => {
     try {
-        const { username, name, title, bio, photo, theme, font, bioFont, links, social } = req.body;
+        const { username, name, title, bio, photo, menuPdf, theme, font, bioFont, links, social } = req.body;
+        const profileType = normalizeProfileType(req.body.profileType || req.body.type || (menuPdf && String(menuPdf).trim() ? 'restaurant' : 'general'));
         const normalizedUsername = (username || '').toLowerCase().trim().replace(/\s+/g, '_');
         if (!normalizedUsername || !/^[a-z0-9_-]+$/.test(normalizedUsername)) {
             return res.status(400).json({ success: false, message: 'Username must contain only letters, numbers, underscores, and hyphens.' });
@@ -463,11 +527,13 @@ router.post('/general-profiles', authMiddleware, adminLimiter, async (req, res) 
             title: title || '',
             bio: bio || '',
             photo: photo || '',
+            menuPdf: menuPdf || '',
             theme: theme || 'mint',
             font: font || 'outfit',
             bioFont: bioFont || font || 'outfit',
             links: Array.isArray(links) ? links : [],
-            social: social || {}
+            social: social || {},
+            profileType
         });
         res.json({ success: true, data: profile });
     } catch (error) {
@@ -482,7 +548,15 @@ router.put('/general-profiles/:id', authMiddleware, adminLimiter, async (req, re
         if (!profile) {
             return res.status(404).json({ success: false, message: 'Profile not found' });
         }
-        const { username, name, title, bio, photo, theme, font, bioFont, links, social } = req.body;
+        const { username, name, title, bio, photo, menuPdf, theme, font, bioFont, links, social } = req.body;
+
+        const profileType =
+            req.body.profileType || req.body.type
+                ? normalizeProfileType(req.body.profileType || req.body.type)
+                : (menuPdf !== undefined && menuPdf !== null)
+                    ? (menuPdf && String(menuPdf).trim() ? 'restaurant' : 'general')
+                    : profile.profileType || 'general';
+
         if (username !== undefined) {
             const normalizedUsername = (username || '').toLowerCase().trim().replace(/\s+/g, '_');
             if (!normalizedUsername || !/^[a-z0-9_-]+$/.test(normalizedUsername)) {
@@ -500,11 +574,13 @@ router.put('/general-profiles/:id', authMiddleware, adminLimiter, async (req, re
         if (title !== undefined) profile.title = title;
         if (bio !== undefined) profile.bio = bio;
         if (photo !== undefined) profile.photo = photo;
+        if (menuPdf !== undefined) profile.menuPdf = menuPdf;
         if (theme !== undefined) profile.theme = theme;
         if (font !== undefined) profile.font = font;
         if (bioFont !== undefined) profile.bioFont = bioFont;
         if (Array.isArray(links)) profile.links = links;
         if (social && typeof social === 'object') profile.social = { ...profile.social.toObject?.() || profile.social, ...social };
+        profile.profileType = profileType;
         await profile.save();
         res.json({ success: true, message: 'Profile updated successfully', data: profile });
     } catch (error) {

@@ -8,6 +8,13 @@ const linkSchema = new mongoose.Schema({
 });
 
 const generalProfileSchema = new mongoose.Schema({
+    profileType: {
+        type: String,
+        trim: true,
+        default: 'general',
+        enum: ['general', 'restaurant'],
+        index: true
+    },
     username: {
         type: String,
         unique: true,
@@ -55,5 +62,7 @@ const generalProfileSchema = new mongoose.Schema({
 }, { timestamps: true });
 
 generalProfileSchema.index({ username: 1 }, { unique: true });
+generalProfileSchema.index({ ownerUid: 1, profileType: 1 });
+generalProfileSchema.index({ ownerEmail: 1, profileType: 1 });
 
 module.exports = mongoose.model('GeneralProfile', generalProfileSchema);

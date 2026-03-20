@@ -7,6 +7,42 @@ const { uploadBuffer } = require('../utils/cloudinary');
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
+function normalizeProfileType(raw) {
+    const v = String(raw || '').toLowerCase().trim();
+    if (v === 'restaurant' || v === 'resturent' || v === 'resturant') return 'restaurant';
+    return 'general';
+}
+
+// Handles legacy documents that don't have `profileType` by inferring from `menuPdf`.
+function buildTypeQueryCond(requestedType) {
+    if (requestedType === 'restaurant') {
+        return {
+            $or: [
+                { profileType: 'restaurant' },
+                {
+                    $and: [
+                        { $or: [{ profileType: { $exists: false } }, { profileType: null }] },
+                        { menuPdf: { $exists: true, $ne: '' } }
+                    ]
+                }
+            ]
+        };
+    }
+
+    // general
+    return {
+        $or: [
+            { profileType: 'general' },
+            {
+                $and: [
+                    { $or: [{ profileType: { $exists: false } }, { profileType: null }] },
+                    { $or: [{ menuPdf: { $exists: false } }, { menuPdf: '' }] }
+                ]
+            }
+        ]
+    };
+}
+
 // @route   POST /api/general-profile/upload-pdf
 // @desc    Upload menu PDF to Cloudinary (for restaurant profiles)
 // @access  Private (Firebase)
@@ -52,7 +88,8 @@ router.get('/u/:username', async (req, res) => {
                 font: profile.font || 'outfit',
                 bioFont: profile.bioFont || profile.font || 'outfit',
                 links: profile.links || [],
-                social: profile.social || {}
+                social: profile.social || {},
+                profileType: profile.profileType || 'general'
             }
         });
     } catch (error) {
@@ -70,9 +107,12 @@ router.get('/u/:username', async (req, res) => {
 router.get('/me', firebaseAuth, async (req, res) => {
     try {
         const { uid, email } = req.firebaseUser;
-        const profile = await GeneralProfile.findOne({
-            $or: [{ ownerUid: uid }, { ownerEmail: email }]
-        }).lean();
+
+        const requestedType = normalizeProfileType(req.query.type || req.query.profileType || 'general');
+        const ownerCond = { $or: [{ ownerUid: uid }, { ownerEmail: email }] };
+        const typeCond = buildTypeQueryCond(requestedType);
+
+        const profile = await GeneralProfile.findOne({ $and: [ownerCond, typeCond] }).lean();
         if (!profile) {
             return res.json({ success: true, data: null });
         }
@@ -84,11 +124,13 @@ router.get('/me', firebaseAuth, async (req, res) => {
                 title: profile.title,
                 bio: profile.bio,
                 photo: profile.photo,
+                menuPdf: profile.menuPdf || '',
                 theme: profile.theme,
                 font: profile.font || 'outfit',
                 bioFont: profile.bioFont || profile.font || 'outfit',
                 links: profile.links || [],
-                social: profile.social || {}
+                social: profile.social || {},
+                profileType: profile.profileType || requestedType
             }
         });
     } catch (error) {
@@ -107,14 +149,15 @@ router.post('/', firebaseAuth, async (req, res) => {
     try {
         const { uid, email } = req.firebaseUser;
         const { username, name, title, bio, photo, menuPdf, theme, font, bioFont, links, social } = req.body;
+        const requestedType = normalizeProfileType(req.body.profileType || req.body.type || 'general');
 
-        const existing = await GeneralProfile.findOne({
-            $or: [{ ownerUid: uid }, { ownerEmail: email }]
-        });
+        const ownerCond = { $or: [{ ownerUid: uid }, { ownerEmail: email }] };
+        const typeCond = buildTypeQueryCond(requestedType);
+        const existing = await GeneralProfile.findOne({ $and: [ownerCond, typeCond] });
         if (existing) {
             return res.status(400).json({
                 success: false,
-                message: 'You already have a general profile. Use update instead.'
+                message: `You already have a ${requestedType} profile. Use update instead.`
             });
         }
 
@@ -146,6 +189,7 @@ router.post('/', firebaseAuth, async (req, res) => {
             bioFont: bioFont || font || 'outfit',
             links: Array.isArray(links) ? links : [],
             social: social || {},
+            profileType: requestedType,
             ownerEmail: email,
             ownerUid: uid
         });
@@ -163,7 +207,8 @@ router.post('/', firebaseAuth, async (req, res) => {
                 font: profile.font || 'outfit',
                 bioFont: profile.bioFont || profile.font || 'outfit',
                 links: profile.links,
-                social: profile.social
+                social: profile.social,
+                profileType: profile.profileType
             }
         });
     } catch (error) {
@@ -181,11 +226,12 @@ router.post('/', firebaseAuth, async (req, res) => {
 router.put('/me', firebaseAuth, async (req, res) => {
     try {
         const { uid, email } = req.firebaseUser;
-        const { username, name, title, bio, photo, theme, font, bioFont, links, social } = req.body;
+        const { username, name, title, bio, photo, menuPdf, theme, font, bioFont, links, social } = req.body;
+        const requestedType = normalizeProfileType(req.body.profileType || req.body.type || 'general');
 
-        const profile = await GeneralProfile.findOne({
-            $or: [{ ownerUid: uid }, { ownerEmail: email }]
-        });
+        const ownerCond = { $or: [{ ownerUid: uid }, { ownerEmail: email }] };
+        const typeCond = buildTypeQueryCond(requestedType);
+        const profile = await GeneralProfile.findOne({ $and: [ownerCond, typeCond] });
         if (!profile) {
             return res.status(404).json({
                 success: false,
@@ -194,10 +240,12 @@ router.put('/me', firebaseAuth, async (req, res) => {
         }
 
         const updates = {};
+        updates.profileType = requestedType;
         if (name !== undefined) updates.name = name;
         if (title !== undefined) updates.title = title;
         if (bio !== undefined) updates.bio = bio;
         if (photo !== undefined) updates.photo = photo;
+        if (menuPdf !== undefined) updates.menuPdf = menuPdf;
         if (theme !== undefined) updates.theme = theme;
         if (font !== undefined) updates.font = font;
         if (bioFont !== undefined) updates.bioFont = bioFont;
@@ -240,7 +288,8 @@ router.put('/me', firebaseAuth, async (req, res) => {
                 font: profile.font || 'outfit',
                 bioFont: profile.bioFont || profile.font || 'outfit',
                 links: profile.links,
-                social: profile.social
+                social: profile.social,
+                profileType: profile.profileType
             }
         });
     } catch (error) {
@@ -258,9 +307,10 @@ router.put('/me', firebaseAuth, async (req, res) => {
 router.delete('/me', firebaseAuth, async (req, res) => {
     try {
         const { uid, email } = req.firebaseUser;
-        const profile = await GeneralProfile.findOneAndDelete({
-            $or: [{ ownerUid: uid }, { ownerEmail: email }]
-        });
+        const requestedType = normalizeProfileType(req.query.type || req.query.profileType || 'general');
+        const ownerCond = { $or: [{ ownerUid: uid }, { ownerEmail: email }] };
+        const typeCond = buildTypeQueryCond(requestedType);
+        const profile = await GeneralProfile.findOneAndDelete({ $and: [ownerCond, typeCond] });
         if (!profile) {
             return res.status(404).json({
                 success: false,
@@ -276,6 +326,46 @@ router.delete('/me', firebaseAuth, async (req, res) => {
         res.status(500).json({
             success: false,
             message: 'Server error during deletion.'
+        });
+    }
+});
+
+// @route   GET /api/general-profile/sample
+// @desc    Get a single public general profile (used by public showcase pages)
+// @access  Public
+router.get('/sample', async (req, res) => {
+    try {
+        const profile = await GeneralProfile.findOne({}).lean();
+
+        if (!profile) {
+            return res.status(404).json({
+                success: false,
+                message: 'No general profiles found'
+            });
+        }
+
+        res.json({
+            success: true,
+            data: {
+                username: profile.username,
+                name: profile.name,
+                title: profile.title,
+                bio: profile.bio,
+                photo: profile.photo,
+                menuPdf: profile.menuPdf || '',
+                theme: profile.theme,
+                font: profile.font || 'outfit',
+                bioFont: profile.bioFont || profile.font || 'outfit',
+                links: profile.links || [],
+                social: profile.social || {},
+                profileType: profile.profileType || 'general'
+            }
+        });
+    } catch (error) {
+        console.error('Error fetching sample general profile:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Server error while fetching sample general profile'
         });
     }
 });

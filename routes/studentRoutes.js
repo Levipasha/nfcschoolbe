@@ -5,6 +5,50 @@ const Session = require('../models/Session');
 const { studentProfileLimiter } = require('../middleware/rateLimiter');
 const { validateStudentId } = require('../middleware/validator');
 
+// @route   GET /api/student/sample
+// @desc    Get a single active student (used by public showcase pages)
+// @access  Public
+router.get('/sample', async (req, res) => {
+    try {
+        const student = await Student.findOne({ isActive: true }).populate('school', 'name code address phone').lean();
+
+        if (!student) {
+            return res.status(404).json({
+                success: false,
+                message: 'No active students found'
+            });
+        }
+
+        res.json({
+            success: true,
+            data: {
+                studentId: student.studentId,
+                name: student.name,
+                nickname: student.nickname,
+                rollNumber: student.rollNumber,
+                class: student.class,
+                age: student.age,
+                photo: student.photo,
+                bloodGroup: student.bloodGroup,
+                motherName: student.motherName,
+                fatherName: student.fatherName,
+                motherPhone: student.motherPhone,
+                fatherPhone: student.fatherPhone,
+                address: student.address,
+                scanCount: student.scanCount,
+                lastScanned: student.lastScanned,
+                school: student.school
+            }
+        });
+    } catch (error) {
+        console.error('Error fetching sample student:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Server error while fetching sample student'
+        });
+    }
+});
+
 // @route   GET /api/student/:id
 // @desc    Get student profile by ID (public endpoint for NFC scans)
 // @access  Public (with rate limiting)
