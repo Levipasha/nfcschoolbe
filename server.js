@@ -92,7 +92,18 @@ app.use('/uploads', (req, res, next) => {
 app.use('/api/p', require('./routes/secureProfileRoutes')); // Secure tokenized profiles
 app.use('/api/student', require('./routes/studentRoutes'));
 app.use('/api/admin', require('./routes/adminRoutes'));
+
+// Admin artist delete: mounted here (not only inside adminRoutes) so DELETE/POST always register when server.js loads.
+const authMiddleware = require('./middleware/auth');
+const { adminLimiter } = require('./middleware/rateLimiter');
+const { deleteAdminArtist } = require('./handlers/adminArtistDelete');
+app.delete('/api/admin/artists/:id', authMiddleware, adminLimiter, deleteAdminArtist);
+app.post('/api/admin/artists/:id/delete', authMiddleware, adminLimiter, deleteAdminArtist);
+
 app.use('/api/upload', require('./routes/uploadRoutes'));
+// Nested /api/school/:id/classes and /students must register before the generic school router
+// so Express never treats "classes" as part of a catch-all param.
+app.use('/api/school', require('./routes/schoolNestedRoutes'));
 app.use('/api/school', require('./routes/schoolRoutes'));
 app.use('/api/sessions', require('./routes/sessionRoutes'));
 app.use('/api/artist', require('./routes/artistRoutes'));
@@ -170,6 +181,7 @@ if (isVercel) {
 📡 Environment: ${process.env.NODE_ENV || 'development'}
 🌐 CORS enabled for allowed origins
 🔌 WebSocket enabled for real-time features
+🗑️  Admin artist delete: POST /api/admin/artists/:id/delete (and DELETE /api/admin/artists/:id)
   `);
     });
     module.exports = app;

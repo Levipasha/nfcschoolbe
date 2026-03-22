@@ -12,10 +12,13 @@ const { firebaseAuth } = require('../middleware/firebaseAuth');
 const { generateOtp, setOtp, consumeOtp } = require('../utils/otpStore');
 const { sendOtpEmail, isConfigured: isSmtpConfigured } = require('../utils/sendMail');
 
-// Multer memory storage for Cloudinary upload (4MB to stay under Vercel 4.5MB body limit)
+// Multer memory → Cloudinary. Default 100MB; set ARTIST_UPLOAD_MAX_MB (10–512) in .env to adjust.
+const _uploadMb = parseInt(process.env.ARTIST_UPLOAD_MAX_MB, 10);
+const ARTIST_UPLOAD_MAX_MB = Number.isFinite(_uploadMb) && _uploadMb > 0 ? Math.min(Math.max(_uploadMb, 10), 512) : 100;
+const ARTIST_UPLOAD_MAX_BYTES = ARTIST_UPLOAD_MAX_MB * 1024 * 1024;
 const upload = multer({
     storage: multer.memoryStorage(),
-    limits: { fileSize: 4 * 1024 * 1024 }, // 4MB for Vercel compatibility
+    limits: { fileSize: ARTIST_UPLOAD_MAX_BYTES },
     fileFilter: (req, file, cb) => {
         if (file.mimetype.startsWith('image/') || file.mimetype.startsWith('video/')) {
             cb(null, true);
@@ -54,7 +57,11 @@ router.post('/check-account', async (req, res) => {
 router.post('/upload-photo', (req, res, next) => {
     upload.single('photo')(req, res, (err) => {
         if (err) {
-            const msg = err.code === 'LIMIT_FILE_SIZE' ? 'File too large. Use an image under 4MB.' : (err.message || 'Upload failed');
+            const maxMb = ARTIST_UPLOAD_MAX_MB;
+            const msg =
+                err.code === 'LIMIT_FILE_SIZE'
+                    ? `File too large (max ${maxMb}MB for this server).`
+                    : err.message || 'Upload failed';
             return res.status(400).json({ success: false, message: msg });
         }
         next();
@@ -64,7 +71,7 @@ router.post('/upload-photo', (req, res, next) => {
         if (!req.file || !req.file.buffer) {
             return res.status(400).json({
                 success: false,
-                message: 'No file uploaded or file too large. Use an image under 4MB on Vercel.'
+                message: 'No file uploaded or file too large.'
             });
         }
         const isVideo = (req.file.mimetype || '').startsWith('video/');
@@ -784,7 +791,15 @@ router.post('/my-profiles', firebaseAuth, async (req, res) => {
         res.json({ success: true, data: artist });
     } catch (error) {
         console.error('Error creating profile:', error);
-        res.status(500).json({ success: false, message: 'Server error', error: error.message });
+        const msg =
+            error.code === 11000
+                ? 'That username or code is already in use.'
+                : error.message || 'Server error';
+        res.status(error.code === 11000 ? 409 : 500).json({
+            success: false,
+            message: msg,
+            error: error.message
+        });
     }
 });
 

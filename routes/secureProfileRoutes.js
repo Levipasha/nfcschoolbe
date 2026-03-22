@@ -71,7 +71,7 @@ router.get('/:token', studentProfileLimiter, async (req, res) => {
             const student = await Student.findOne({
                 studentId: accessToken.studentId,
                 isActive: true
-            }).populate('school', 'name code address phone');
+            }).populate('school', 'name code address phone email principalName');
 
             if (!student) {
                 return res.status(404).json({
@@ -87,7 +87,11 @@ router.get('/:token', studentProfileLimiter, async (req, res) => {
 
             profileData = {
                 type: 'student',
+                studentId: student.studentId,
                 name: student.name,
+                nickname: student.nickname != null && String(student.nickname).trim() !== ''
+                    ? String(student.nickname).trim()
+                    : null,
                 rollNumber: student.rollNumber,
                 class: student.class,
                 age: student.age,
@@ -98,6 +102,9 @@ router.get('/:token', studentProfileLimiter, async (req, res) => {
                 motherPhone: student.motherPhone,
                 fatherPhone: student.fatherPhone,
                 address: student.address,
+                city: student.city,
+                state: student.state,
+                pincode: student.pincode,
                 scanCount: student.scanCount,
                 lastScanned: student.lastScanned,
                 school: student.school

@@ -7,7 +7,7 @@ const School = require('../models/School');
 const Artist = require('../models/Artist');
 const authMiddleware = require('../middleware/auth');
 const { adminLimiter, loginLimiter } = require('../middleware/rateLimiter');
-const { validateStudentData } = require('../middleware/validator');
+const { validateStudentData, resolveStudentClassFromSchoolClass } = require('../middleware/validator');
 const { generateOtp, setAdminOtp, consumeAdminOtp } = require('../utils/otpStore');
 const { sendOtpEmail, isConfigured: isSmtpConfigured } = require('../utils/sendMail');
 const multer = require('multer');
@@ -130,7 +130,7 @@ router.get('/students', authMiddleware, adminLimiter, async (req, res) => {
 // @route   POST /api/admin/students
 // @desc    Add new student
 // @access  Protected
-router.post('/students', authMiddleware, adminLimiter, validateStudentData, async (req, res) => {
+router.post('/students', authMiddleware, adminLimiter, resolveStudentClassFromSchoolClass, validateStudentData, async (req, res) => {
     try {
         const studentData = req.body;
 
@@ -144,13 +144,27 @@ router.post('/students', authMiddleware, adminLimiter, validateStudentData, asyn
         }
 
         const student = new Student(studentData);
+        if (req.body.nickname != null && String(req.body.nickname).trim() !== '') {
+            student.nickname = String(req.body.nickname).trim();
+        }
         await student.save();
+
+        // Reload so accessToken from post-save hook is present before building NFC URL
+        const saved = await Student.findById(student._id);
+        let nfcUrl = null;
+        try {
+            if (saved && saved.accessToken) {
+                nfcUrl = saved.generateNFCUrl(process.env.FRONTEND_URL || 'http://localhost:5173');
+            }
+        } catch (e) {
+            console.warn('Could not build nfcUrl for new student:', e.message);
+        }
 
         res.status(201).json({
             success: true,
             message: 'Student added successfully',
-            data: student,
-            nfcUrl: student.generateNFCUrl(process.env.FRONTEND_URL || 'http://localhost:5173')
+            data: saved || student,
+            nfcUrl
         });
     } catch (error) {
         console.error('Error adding student:', error);
@@ -200,7 +214,7 @@ router.get('/students/:id', authMiddleware, adminLimiter, async (req, res) => {
 // @route   PUT /api/admin/students/:id
 // @desc    Update student
 // @access  Protected
-router.put('/students/:id', authMiddleware, adminLimiter, validateStudentData, async (req, res) => {
+router.put('/students/:id', authMiddleware, adminLimiter, resolveStudentClassFromSchoolClass, validateStudentData, async (req, res) => {
     try {
         const student = await Student.findOne({ studentId: req.params.id });
 
@@ -316,7 +330,7 @@ router.get('/artists', authMiddleware, adminLimiter, async (req, res) => {
         }
         const artists = await Artist.find(query)
             .sort({ createdAt: -1 })
-            .select('artistId name code email isSetup scanCount badgeOverrides isActive createdAt');
+            .select('_id artistId name code email isSetup scanCount badgeOverrides isActive createdAt');
         res.json({
             success: true,
             data: artists,
@@ -397,6 +411,8 @@ router.put('/artists/:id', authMiddleware, adminLimiter, async (req, res) => {
         });
     }
 });
+
+// Artist delete is registered on the root app in server.js (DELETE + POST) so it always loads with the API process.
 
 // ---------- General Profiles (admin: list, get, create, update, delete) ----------
 const GeneralProfile = require('../models/GeneralProfile');

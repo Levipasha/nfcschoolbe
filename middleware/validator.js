@@ -1,4 +1,39 @@
 const validator = require('validator');
+const mongoose = require('mongoose');
+const Student = require('../models/Student');
+const SchoolClass = require('../models/SchoolClass');
+
+/** When `schoolClass` is sent, set `class` string from that record (same school). Runs before validateStudentData. */
+const resolveStudentClassFromSchoolClass = async (req, res, next) => {
+    try {
+        const schoolClassId = req.body.schoolClass;
+        if (schoolClassId === undefined || schoolClassId === null || schoolClassId === '') {
+            return next();
+        }
+        if (!mongoose.Types.ObjectId.isValid(schoolClassId)) {
+            return res.status(400).json({ success: false, message: 'Invalid class selection' });
+        }
+        let schoolId = req.body.school;
+        if (!schoolId && req.params.id) {
+            const st = await Student.findOne({ studentId: req.params.id }).select('school').lean();
+            if (st) schoolId = st.school;
+        }
+        if (!schoolId) {
+            return res.status(400).json({
+                success: false,
+                message: 'School context required when assigning a class'
+            });
+        }
+        const sc = await SchoolClass.findOne({ _id: schoolClassId, school: schoolId }).lean();
+        if (!sc) {
+            return res.status(400).json({ success: false, message: 'Class not found for this school' });
+        }
+        req.body.class = sc.name;
+        next();
+    } catch (err) {
+        next(err);
+    }
+};
 
 // Validate student data
 const validateStudentData = (req, res, next) => {
@@ -58,5 +93,6 @@ const validateStudentId = (req, res, next) => {
 
 module.exports = {
     validateStudentData,
-    validateStudentId
+    validateStudentId,
+    resolveStudentClassFromSchoolClass
 };

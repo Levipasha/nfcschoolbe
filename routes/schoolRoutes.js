@@ -2,6 +2,8 @@ const express = require('express');
 const router = express.Router();
 const School = require('../models/School');
 const Student = require('../models/Student');
+const SchoolClass = require('../models/SchoolClass');
+const AccessToken = require('../models/AccessToken');
 const authMiddleware = require('../middleware/auth');
 const { adminLimiter } = require('../middleware/rateLimiter');
 
@@ -60,12 +62,10 @@ router.get('/:id', authMiddleware, async (req, res) => {
         });
     } catch (error) {
         console.error('Error fetching school:', error);
-        res
-
-            .status(500).json({
-                success: false,
-                message: 'Error fetching school'
-            });
+        res.status(500).json({
+            success: false,
+            message: 'Error fetching school'
+        });
     }
 });
 
@@ -192,7 +192,7 @@ router.put('/:id/toggle-status', authMiddleware, adminLimiter, async (req, res) 
 });
 
 // @route   DELETE /api/school/:id
-// @desc    Delete school
+// @desc    Delete school and all related classes, students, and NFC tokens (admin UI confirms first)
 // @access  Protected (Admin)
 router.delete('/:id', authMiddleware, adminLimiter, async (req, res) => {
     try {
@@ -205,16 +205,18 @@ router.delete('/:id', authMiddleware, adminLimiter, async (req, res) => {
             });
         }
 
-        // Check if school has students
         const studentCount = await Student.countDocuments({ school: school._id });
 
         if (studentCount > 0) {
-            return res.status(400).json({
-                success: false,
-                message: `Cannot delete school with ${studentCount} students. Please delete or transfer students first.`
-            });
+            const studentDocs = await Student.find({ school: school._id }).select('studentId').lean();
+            const studentIds = studentDocs.map((s) => s.studentId).filter(Boolean);
+            if (studentIds.length > 0) {
+                await AccessToken.deleteMany({ studentId: { $in: studentIds } });
+            }
+            await Student.deleteMany({ school: school._id });
         }
 
+        await SchoolClass.deleteMany({ school: school._id });
         await school.deleteOne();
 
         res.json({
@@ -226,39 +228,6 @@ router.delete('/:id', authMiddleware, adminLimiter, async (req, res) => {
         res.status(500).json({
             success: false,
             message: 'Error deleting school'
-        });
-    }
-});
-
-// @route   GET /api/school/:id/students
-// @desc    Get all students for a school
-// @access  Protected (Admin)
-router.get('/:id/students', authMiddleware, async (req, res) => {
-    try {
-        const school = await School.findById(req.params.id);
-
-        if (!school) {
-            return res.status(404).json({
-                success: false,
-                message: 'School not found'
-            });
-        }
-
-        const students = await Student.find({ school: school._id })
-            .sort({ sequentialNumber: 1 });
-
-        res.json({
-            success: true,
-            data: {
-                school: school,
-                students: students
-            }
-        });
-    } catch (error) {
-        console.error('Error fetching school students:', error);
-        res.status(500).json({
-            success: false,
-            message: 'Error fetching students'
         });
     }
 });

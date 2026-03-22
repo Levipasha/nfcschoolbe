@@ -54,6 +54,11 @@ const studentSchema = new mongoose.Schema({
         required: [true, 'Class is required'],
         trim: true
     },
+    schoolClass: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'SchoolClass',
+        index: true
+    },
     age: {
         type: Number,
         min: [1, 'Age must be at least 1'],

@@ -319,10 +319,13 @@ artistSchema.pre('validate', async function (next) {
             this.artistId = `${basePrefix}${String(nextNumber).padStart(2, '0')}`;
         }
 
-        // 2. Consistent Artist Code
+        // 2. Consistent Artist Code (codeNumber must be a finite number — custom slugs like "capvamshi" have no "-NN" tail)
         if (!this.code) {
             this.code = this.artistId;
-            this.codeNumber = parseInt(this.artistId.split('-')[1]);
+            const parts = String(this.artistId).split('-');
+            const tail = parts.length > 1 ? parts[parts.length - 1] : parts[0];
+            const n = parseInt(tail, 10);
+            this.codeNumber = Number.isFinite(n) ? n : 0;
         }
 
         next();
