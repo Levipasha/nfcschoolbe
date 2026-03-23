@@ -46,6 +46,11 @@ const generalProfileSchema = new mongoose.Schema({
         default: 'outfit'
     },
     links: [linkSchema],
+    /** Restaurant (and optional general) image gallery — max 3 on client */
+    gallery: [{
+        url: { type: String, trim: true, default: '' },
+        name: { type: String, trim: true, default: '' }
+    }],
     social: {
         instagram: { type: String, trim: true, default: '' },
         twitter: { type: String, trim: true, default: '' },

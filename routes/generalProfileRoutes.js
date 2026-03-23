@@ -7,6 +7,17 @@ const { uploadBuffer } = require('../utils/cloudinary');
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
+function normalizeGalleryInput(raw) {
+    if (!Array.isArray(raw)) return [];
+    return raw
+        .slice(0, 3)
+        .map((g) => ({
+            url: typeof g?.url === 'string' ? g.url.trim() : '',
+            name: typeof g?.name === 'string' ? g.name.trim().slice(0, 200) : ''
+        }))
+        .filter((g) => g.url);
+}
+
 function normalizeProfileType(raw) {
     const v = String(raw || '').toLowerCase().trim();
     if (v === 'restaurant' || v === 'resturent' || v === 'resturant') return 'restaurant';
@@ -89,7 +100,8 @@ router.get('/u/:username', async (req, res) => {
                 bioFont: profile.bioFont || profile.font || 'outfit',
                 links: profile.links || [],
                 social: profile.social || {},
-                profileType: profile.profileType || 'general'
+                profileType: profile.profileType || 'general',
+                gallery: normalizeGalleryInput(profile.gallery)
             }
         });
     } catch (error) {
@@ -130,7 +142,8 @@ router.get('/me', firebaseAuth, async (req, res) => {
                 bioFont: profile.bioFont || profile.font || 'outfit',
                 links: profile.links || [],
                 social: profile.social || {},
-                profileType: profile.profileType || requestedType
+                profileType: profile.profileType || requestedType,
+                gallery: normalizeGalleryInput(profile.gallery)
             }
         });
     } catch (error) {
@@ -189,6 +202,7 @@ router.post('/', firebaseAuth, async (req, res) => {
             bioFont: bioFont || font || 'outfit',
             links: Array.isArray(links) ? links : [],
             social: social || {},
+            gallery: normalizeGalleryInput(gallery),
             profileType: requestedType,
             ownerEmail: email,
             ownerUid: uid
@@ -208,7 +222,8 @@ router.post('/', firebaseAuth, async (req, res) => {
                 bioFont: profile.bioFont || profile.font || 'outfit',
                 links: profile.links,
                 social: profile.social,
-                profileType: profile.profileType
+                profileType: profile.profileType,
+                gallery: normalizeGalleryInput(profile.gallery)
             }
         });
     } catch (error) {
@@ -226,7 +241,7 @@ router.post('/', firebaseAuth, async (req, res) => {
 router.put('/me', firebaseAuth, async (req, res) => {
     try {
         const { uid, email } = req.firebaseUser;
-        const { username, name, title, bio, photo, menuPdf, theme, font, bioFont, links, social } = req.body;
+        const { username, name, title, bio, photo, menuPdf, theme, font, bioFont, links, social, gallery } = req.body;
         const requestedType = normalizeProfileType(req.body.profileType || req.body.type || 'general');
 
         const ownerCond = { $or: [{ ownerUid: uid }, { ownerEmail: email }] };
@@ -251,6 +266,7 @@ router.put('/me', firebaseAuth, async (req, res) => {
         if (bioFont !== undefined) updates.bioFont = bioFont;
         if (Array.isArray(links)) updates.links = links;
         if (social && typeof social === 'object') updates.social = { ...profile.social, ...social };
+        if (gallery !== undefined) updates.gallery = normalizeGalleryInput(gallery);
 
         if (username !== undefined) {
             const normalizedUsername = (username || '').toLowerCase().trim().replace(/\s+/g, '_');
@@ -358,7 +374,8 @@ router.get('/sample', async (req, res) => {
                 bioFont: profile.bioFont || profile.font || 'outfit',
                 links: profile.links || [],
                 social: profile.social || {},
-                profileType: profile.profileType || 'general'
+                profileType: profile.profileType || 'general',
+                gallery: normalizeGalleryInput(profile.gallery)
             }
         });
     } catch (error) {
