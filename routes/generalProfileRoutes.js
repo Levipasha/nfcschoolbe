@@ -161,7 +161,7 @@ router.get('/me', firebaseAuth, async (req, res) => {
 router.post('/', firebaseAuth, async (req, res) => {
     try {
         const { uid, email } = req.firebaseUser;
-        const { username, name, title, bio, photo, menuPdf, theme, font, bioFont, links, social } = req.body;
+        const { username, name, title, bio, photo, menuPdf, theme, font, bioFont, links, social, gallery } = req.body;
         const requestedType = normalizeProfileType(req.body.profileType || req.body.type || 'general');
 
         const ownerCond = { $or: [{ ownerUid: uid }, { ownerEmail: email }] };
@@ -246,7 +246,11 @@ router.put('/me', firebaseAuth, async (req, res) => {
 
         const ownerCond = { $or: [{ ownerUid: uid }, { ownerEmail: email }] };
         const typeCond = buildTypeQueryCond(requestedType);
-        const profile = await GeneralProfile.findOne({ $and: [ownerCond, typeCond] });
+        let profile = await GeneralProfile.findOne({ $and: [ownerCond, typeCond] });
+        // One document per username: upgrading "general" → "restaurant" must update the same row.
+        if (!profile && requestedType === 'restaurant') {
+            profile = await GeneralProfile.findOne(ownerCond);
+        }
         if (!profile) {
             return res.status(404).json({
                 success: false,
@@ -305,7 +309,8 @@ router.put('/me', firebaseAuth, async (req, res) => {
                 bioFont: profile.bioFont || profile.font || 'outfit',
                 links: profile.links,
                 social: profile.social,
-                profileType: profile.profileType
+                profileType: profile.profileType,
+                gallery: normalizeGalleryInput(profile.gallery)
             }
         });
     } catch (error) {
