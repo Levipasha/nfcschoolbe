@@ -166,6 +166,12 @@ const artistSchema = new mongoose.Schema({
         default: ''
         // e.g., Painter, Sculptor, Digital Artist, etc.
     },
+    experience: {
+        type: String,
+        trim: true,
+        default: ''
+        // e.g., 2 years experience, Senior Artist, etc.
+    },
     artworkCount: {
         type: Number,
         default: 0
