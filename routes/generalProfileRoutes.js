@@ -5,7 +5,7 @@ const GeneralProfile = require('../models/GeneralProfile');
 const { firebaseAuth } = require('../middleware/firebaseAuth');
 const { uploadBuffer } = require('../utils/cloudinary');
 
-const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
 
 function normalizeGalleryInput(raw) {
     if (!Array.isArray(raw)) return [];

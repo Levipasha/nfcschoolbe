@@ -12,9 +12,9 @@ const { firebaseAuth } = require('../middleware/firebaseAuth');
 const { generateOtp, setOtp, consumeOtp } = require('../utils/otpStore');
 const { sendOtpEmail, isConfigured: isSmtpConfigured } = require('../utils/sendMail');
 
-// Multer memory → Cloudinary. Default 100MB; set ARTIST_UPLOAD_MAX_MB (10–512) in .env to adjust.
+// Multer memory → Cloudinary. Default 50MB; set ARTIST_UPLOAD_MAX_MB (10–512) in .env to adjust.
 const _uploadMb = parseInt(process.env.ARTIST_UPLOAD_MAX_MB, 10);
-const ARTIST_UPLOAD_MAX_MB = Number.isFinite(_uploadMb) && _uploadMb > 0 ? Math.min(Math.max(_uploadMb, 10), 512) : 100;
+const ARTIST_UPLOAD_MAX_MB = Number.isFinite(_uploadMb) && _uploadMb > 0 ? Math.min(Math.max(_uploadMb, 10), 512) : 50;
 const ARTIST_UPLOAD_MAX_BYTES = ARTIST_UPLOAD_MAX_MB * 1024 * 1024;
 const upload = multer({
     storage: multer.memoryStorage(),
@@ -772,14 +772,14 @@ router.post('/my-profiles', firebaseAuth, async (req, res) => {
         const uid = req.firebaseUser.uid || null;
 
         const { artistId, name } = req.body;
-        
+
         if (artistId) {
             const existing = await Artist.findOne({ artistId });
             if (existing) {
                 return res.status(400).json({ success: false, message: 'Username already taken' });
             }
         }
-        
+
         const artist = new Artist({
             artistId: artistId || `user-${Date.now()}`,
             name: name || 'New Artist',
@@ -789,7 +789,7 @@ router.post('/my-profiles', firebaseAuth, async (req, res) => {
             isSetup: false,
             isActive: true
         });
-        
+
         await artist.save();
         res.json({ success: true, data: artist });
     } catch (error) {

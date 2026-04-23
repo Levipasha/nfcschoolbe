@@ -36,13 +36,20 @@ mongoose.connect(MONGODB_URI)
     });
 
 // Security middleware
-app.use(helmet()); // Set security HTTP headers
+app.use(helmet({
+    // unsafe-none removes COOP isolation so Firebase signInWithPopup can communicate
+    // with the Google auth window (window.closed checks, postMessage, etc.).
+    // This is safe for a pure API server that doesn't use SharedArrayBuffer.
+    crossOriginOpenerPolicy: { policy: "unsafe-none" },
+})); // Set security HTTP headers
 app.use(mongoSanitize()); // Prevent NoSQL injection
 
 // CORS configuration (API is used by: nfcschoolfe, landing page, mobile, etc.)
 const allowedOrigins = [
     'http://localhost:5173',
     'http://localhost:3000',
+    'https://nanoprofiles.com',
+    'https://www.nanoprofiles.com',
     'https://www.skywebdev.xyz',
     'https://skywebdev.xyz',
     process.env.FRONTEND_URL,
@@ -56,8 +63,13 @@ const corsOptions = {
         // Allow requests with no origin (like mobile apps or curl requests)
         if (!origin) return callback(null, true);
 
-        // In development, allow all origins to facilitate local network testing
-        if (process.env.NODE_ENV !== 'production') {
+        // Always allow localhost/127.0.0.1 (any port) — local development
+        if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) {
+            return callback(null, true);
+        }
+
+        // Allow all origins if explicitly enabled via env var (useful for staging)
+        if (process.env.CORS_ALLOW_ALL === 'true') {
             return callback(null, true);
         }
 
@@ -74,6 +86,8 @@ const corsOptions = {
         }
     },
     credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Firebase-UID', 'X-Firebase-Email'],
     optionsSuccessStatus: 200
 };
 app.use(cors(corsOptions));
@@ -81,6 +95,12 @@ app.use(cors(corsOptions));
 // Body parser middleware
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
+
+// Request logger for local debugging
+app.use((req, res, next) => {
+    console.log(`[${new Date().toISOString()}] ${req.method} ${req.url} - Origin: ${req.headers.origin}`);
+    next();
+});
 
 // Serve static files with permissive CORS for images
 app.use('/uploads', (req, res, next) => {
