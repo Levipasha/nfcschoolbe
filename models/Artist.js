@@ -46,7 +46,8 @@ const artistSchema = new mongoose.Schema({
     },
     gallery: [{
         url: { type: String, trim: true },
-        name: { type: String, trim: true, default: '' }
+        name: { type: String, trim: true, default: '' },
+        link: { type: String, trim: true, default: '' }
     }],
     phone: {
         type: String,
