@@ -94,6 +94,7 @@ router.get('/u/:username', async (req, res) => {
                 title: profile.title,
                 bio: profile.bio,
                 photo: profile.photo,
+                banner: profile.banner || '',
                 menuPdf: profile.menuPdf || '',
                 theme: profile.theme,
                 font: profile.font || 'outfit',
@@ -136,6 +137,7 @@ router.get('/me', firebaseAuth, async (req, res) => {
                 title: profile.title,
                 bio: profile.bio,
                 photo: profile.photo,
+                banner: profile.banner || '',
                 menuPdf: profile.menuPdf || '',
                 theme: profile.theme,
                 font: profile.font || 'outfit',
@@ -161,7 +163,7 @@ router.get('/me', firebaseAuth, async (req, res) => {
 router.post('/', firebaseAuth, async (req, res) => {
     try {
         const { uid, email } = req.firebaseUser;
-        const { username, name, title, bio, photo, menuPdf, theme, font, bioFont, links, social, gallery } = req.body;
+        const { username, name, title, bio, photo, banner, menuPdf, theme, font, bioFont, links, social, gallery } = req.body;
         const requestedType = normalizeProfileType(req.body.profileType || req.body.type || 'general');
 
         const ownerCond = { $or: [{ ownerUid: uid }, { ownerEmail: email }] };
@@ -196,6 +198,7 @@ router.post('/', firebaseAuth, async (req, res) => {
             title: title || '',
             bio: bio || '',
             photo: photo || '',
+            banner: banner || '',
             menuPdf: menuPdf || '',
             theme: theme || 'mint',
             font: font || 'outfit',
@@ -216,6 +219,7 @@ router.post('/', firebaseAuth, async (req, res) => {
                 title: profile.title,
                 bio: profile.bio,
                 photo: profile.photo,
+                banner: profile.banner || '',
                 menuPdf: profile.menuPdf || '',
                 theme: profile.theme,
                 font: profile.font || 'outfit',
@@ -241,7 +245,7 @@ router.post('/', firebaseAuth, async (req, res) => {
 router.put('/me', firebaseAuth, async (req, res) => {
     try {
         const { uid, email } = req.firebaseUser;
-        const { username, name, title, bio, photo, menuPdf, theme, font, bioFont, links, social, gallery } = req.body;
+        const { username, name, title, bio, photo, banner, menuPdf, theme, font, bioFont, links, social, gallery } = req.body;
         const requestedType = normalizeProfileType(req.body.profileType || req.body.type || 'general');
 
         const ownerCond = { $or: [{ ownerUid: uid }, { ownerEmail: email }] };
@@ -264,6 +268,7 @@ router.put('/me', firebaseAuth, async (req, res) => {
         if (title !== undefined) updates.title = title;
         if (bio !== undefined) updates.bio = bio;
         if (photo !== undefined) updates.photo = photo;
+        if (banner !== undefined) updates.banner = banner;
         if (menuPdf !== undefined) updates.menuPdf = menuPdf;
         if (theme !== undefined) updates.theme = theme;
         if (font !== undefined) updates.font = font;
@@ -303,6 +308,7 @@ router.put('/me', firebaseAuth, async (req, res) => {
                 title: profile.title,
                 bio: profile.bio,
                 photo: profile.photo,
+                banner: profile.banner || '',
                 menuPdf: profile.menuPdf || '',
                 theme: profile.theme,
                 font: profile.font || 'outfit',
@@ -373,6 +379,7 @@ router.get('/sample', async (req, res) => {
                 title: profile.title,
                 bio: profile.bio,
                 photo: profile.photo,
+                banner: profile.banner || '',
                 menuPdf: profile.menuPdf || '',
                 theme: profile.theme,
                 font: profile.font || 'outfit',

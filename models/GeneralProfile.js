@@ -29,6 +29,7 @@ const generalProfileSchema = new mongoose.Schema({
     title: { type: String, trim: true, default: '' }, // e.g. "Company owner"
     bio: { type: String, trim: true, default: '' },
     photo: { type: String, trim: true, default: '' },
+    banner: { type: String, trim: true, default: '' },
     menuPdf: { type: String, trim: true, default: '' },
     theme: {
         type: String,
