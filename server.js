@@ -37,10 +37,24 @@ mongoose.connect(MONGODB_URI)
 
 // Security middleware
 app.use(helmet({
-    // unsafe-none removes COOP isolation so Firebase signInWithPopup can communicate
-    // with the Google auth window (window.closed checks, postMessage, etc.).
-    // This is safe for a pure API server that doesn't use SharedArrayBuffer.
+    contentSecurityPolicy: {
+        useDefaults: false,
+        directives: {
+            "default-src": ["'self'"],
+            "frame-ancestors": ["*"],
+            "img-src": ["'self'", "data:", "https://res.cloudinary.com", "*"],
+            "script-src": ["'self'", "'unsafe-inline'", "'unsafe-eval'", "https://*.firebaseapp.com", "https://*.googleapis.com", "*"],
+            "style-src": ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com", "*"],
+            "font-src": ["'self'", "https://fonts.gstatic.com", "*"],
+            "connect-src": ["'self'", "*"],
+            "object-src": ["'none'"],
+            "media-src": ["'self'"],
+            "frame-src": ["'self'", "https://*.firebaseapp.com", "*"],
+        },
+    },
+    frameguard: false, // Disable X-Frame-Options: SAMEORIGIN
     crossOriginOpenerPolicy: { policy: "unsafe-none" },
+    crossOriginResourcePolicy: { policy: "cross-origin" },
 })); // Set security HTTP headers
 app.use(mongoSanitize()); // Prevent NoSQL injection
 
@@ -50,6 +64,7 @@ const allowedOrigins = [
     'http://localhost:3000',
     'https://nanoprofiles.com',
     'https://www.nanoprofiles.com',
+    'https://profiles.nanoprofiles.com',
     'https://www.skywebdev.xyz',
     'https://skywebdev.xyz',
     process.env.FRONTEND_URL,
@@ -129,17 +144,41 @@ app.use('/api/sessions', require('./routes/sessionRoutes'));
 app.use('/api/artist', require('./routes/artistRoutes'));
 app.use('/api/general-profile', require('./routes/generalProfileRoutes'));
 
-// Health check endpoint
-app.get('/health', (req, res) => {
-    res.json({
-        success: true,
-        message: 'NFC Student System API is running',
-        timestamp: new Date().toISOString()
-    });
+// Contact route (placeholder for landing page)
+app.post('/api/contact', (req, res) => {
+    console.log('Contact form submission:', req.body);
+    res.json({ success: true, message: 'Message received! We will get back to you soon.' });
 });
 
-// Root endpoint
-app.get('/', (req, res) => {
+// Serve Admin build
+const adminPath = path.join(__dirname, '..', 'admin', 'dist');
+app.use('/admin', express.static(adminPath));
+app.use('/p', express.static(adminPath)); // Admin handles /p/:token routes
+
+// Handle Admin/NFC subroutes
+app.get(['/admin/*', '/p/*'], (req, res) => {
+    res.setHeader("Content-Security-Policy", "frame-ancestors *");
+    res.sendFile(path.join(adminPath, 'index.html'));
+});
+
+// Serve landing page build
+const landingPagePath = path.join(__dirname, '..', 'landingpage', 'build');
+app.use(express.static(landingPagePath));
+
+// Handle React routing in landing page (catch-all for everything else)
+app.get('*', (req, res, next) => {
+    // If it's an API route or upload, let it pass to other handlers (which might return 404)
+    if (req.path.startsWith('/api') || req.path.startsWith('/uploads') || req.path === '/health') {
+        return next();
+    }
+    
+    // Serve landing page for all other frontend routes
+    res.setHeader("Content-Security-Policy", "frame-ancestors *");
+    res.sendFile(path.join(landingPagePath, 'index.html'));
+});
+
+// Fallback for API documentation or status if everything else fails
+app.get('/api', (req, res) => {
     res.json({
         success: true,
         message: 'Welcome to NFC Student Profile System API',
