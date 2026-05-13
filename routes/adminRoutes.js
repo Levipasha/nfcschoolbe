@@ -5,13 +5,47 @@ const validator = require('validator');
 const Student = require('../models/Student');
 const School = require('../models/School');
 const Artist = require('../models/Artist');
+const GeneralProfile = require('../models/GeneralProfile');
 const authMiddleware = require('../middleware/auth');
+
+const { checkProfileConflict, getProfileConflicts, generateUsernameSuggestions } = require('../utils/profileUtils');
+
+
+
+
 const { adminLimiter, loginLimiter } = require('../middleware/rateLimiter');
 const { validateStudentData, resolveStudentClassFromSchoolClass } = require('../middleware/validator');
 const { generateOtp, setAdminOtp, consumeAdminOtp } = require('../utils/otpStore');
 const { sendOtpEmail, isConfigured: isSmtpConfigured } = require('../utils/sendMail');
 const multer = require('multer');
 const { uploadBuffer } = require('../utils/cloudinary');
+
+// @route   GET /api/admin/check-availability
+// @desc    Check if username or email is taken (cross-collection)
+// @access  Protected
+router.get('/check-availability', authMiddleware, adminLimiter, async (req, res) => {
+    try {
+        const { username, email, excludeId } = req.query;
+        const conflicts = await getProfileConflicts(username, email, excludeId);
+        const hasConflict = !!(conflicts.username || conflicts.email);
+        
+        let suggestions = [];
+        if (conflicts.username && username) {
+            suggestions = await generateUsernameSuggestions(username);
+        }
+
+        res.json({ 
+            success: true, 
+            available: !hasConflict, 
+            conflicts: conflicts,
+            suggestions: suggestions
+        });
+
+
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
 
 // Only this email is allowed for admin login (no passwords, no usernames)
 const ALLOWED_ADMIN_EMAIL = 'skywebdevelopers123@gmail.com';
@@ -375,11 +409,31 @@ router.get('/artists/:id', authMiddleware, adminLimiter, async (req, res) => {
 // @access  Protected
 router.put('/artists/:id', authMiddleware, adminLimiter, async (req, res) => {
     try {
-        const allowed = ['name', 'bio', 'specialization', 'badgeOverrides', 'isActive'];
+        const allowed = ['artistId', 'name', 'email', 'bio', 'specialization', 'badgeOverrides', 'isActive', 'isSetup'];
         const updateData = {};
         allowed.forEach(key => {
             if (req.body[key] !== undefined) updateData[key] = req.body[key];
         });
+
+        if (updateData.artistId || updateData.email) {
+            const normalizedUsername = updateData.artistId ? String(updateData.artistId).toLowerCase().trim().replace(/\s+/g, '_') : null;
+            const normalizedEmail = updateData.email ? String(updateData.email).toLowerCase().trim() : null;
+
+            if (normalizedUsername && !/^[a-z0-9_-]+$/.test(normalizedUsername)) {
+                return res.status(400).json({ success: false, message: 'Invalid username format.' });
+            }
+            
+            // Check for conflicts across all profile types
+            const conflict = await checkProfileConflict(normalizedUsername, normalizedEmail, req.params.id);
+            if (conflict) {
+                return res.status(400).json({ success: false, message: conflict });
+            }
+            if (normalizedUsername) updateData.artistId = normalizedUsername;
+            if (normalizedEmail) {
+                updateData.email = normalizedEmail;
+                updateData.ownerEmail = normalizedEmail; // Sync ownerEmail as well
+            }
+        }
         if (Object.keys(updateData).length === 0) {
             return res.status(400).json({
                 success: false,
@@ -415,7 +469,6 @@ router.put('/artists/:id', authMiddleware, adminLimiter, async (req, res) => {
 // Artist delete is registered on the root app in server.js (DELETE + POST) so it always loads with the API process.
 
 // ---------- General Profiles (admin: list, get, create, update, delete) ----------
-const GeneralProfile = require('../models/GeneralProfile');
 const adminUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
 function normalizeProfileType(raw) {
@@ -533,9 +586,9 @@ router.post('/general-profiles', authMiddleware, adminLimiter, async (req, res) 
         if (!normalizedUsername || !/^[a-z0-9_-]+$/.test(normalizedUsername)) {
             return res.status(400).json({ success: false, message: 'Username must contain only letters, numbers, underscores, and hyphens.' });
         }
-        const taken = await GeneralProfile.findOne({ username: normalizedUsername });
-        if (taken) {
-            return res.status(400).json({ success: false, message: 'Username is already taken.' });
+        const conflict = await checkProfileConflict(normalizedUsername, req.body.ownerEmail);
+        if (conflict) {
+            return res.status(400).json({ success: false, message: conflict });
         }
         const profile = await GeneralProfile.create({
             username: normalizedUsername,
@@ -549,12 +602,63 @@ router.post('/general-profiles', authMiddleware, adminLimiter, async (req, res) 
             bioFont: bioFont || font || 'outfit',
             links: Array.isArray(links) ? links : [],
             social: social || {},
-            profileType
+            profileType,
+            ownerEmail: (req.body.ownerEmail || '').toLowerCase().trim()
         });
         res.json({ success: true, data: profile });
     } catch (error) {
         console.error('Error creating general profile:', error);
         res.status(500).json({ success: false, message: error.message || 'Error creating profile' });
+    }
+});
+
+// @route   POST /api/admin/artists
+// @desc    Create new artist profile (admin)
+// @access  Protected
+router.post('/artists', authMiddleware, adminLimiter, async (req, res) => {
+    try {
+        const { name, email, specialization, bio, isActive, artistId } = req.body;
+        
+        const normalizedEmail = (email || '').toLowerCase().trim();
+        if (!normalizedEmail || !validator.isEmail(normalizedEmail)) {
+            return res.status(400).json({ success: false, message: 'A valid email is mandatory.' });
+        }
+
+        const normalizedUsername = (artistId || '').toLowerCase().trim().replace(/\s+/g, '_');
+        if (!normalizedUsername || !/^[a-z0-9_-]+$/.test(normalizedUsername)) {
+            return res.status(400).json({ success: false, message: 'Username must contain only letters, numbers, underscores, and hyphens.' });
+        }
+
+        // Check if artist with this email or username already exists (cross-check)
+        const conflict = await checkProfileConflict(normalizedUsername, normalizedEmail);
+        if (conflict) {
+            return res.status(400).json({ success: false, message: conflict });
+        }
+
+        const artist = new Artist({
+            artistId: normalizedUsername,
+            name: name || 'New Artist',
+            email: normalizedEmail,
+            ownerEmail: normalizedEmail,
+            specialization: specialization || '',
+            bio: bio || '',
+            isActive: isActive !== undefined ? isActive : true,
+            isSetup: true // Set to true so user goes directly to dashboard
+        });
+
+        await artist.save();
+        
+        // Reload to get the generated IDs and tokens
+        const saved = await Artist.findById(artist._id);
+        
+        res.json({ 
+            success: true, 
+            message: 'Artist profile created successfully',
+            data: saved 
+        });
+    } catch (error) {
+        console.error('Error creating artist profile:', error);
+        res.status(500).json({ success: false, message: error.message || 'Error creating artist' });
     }
 });
 
@@ -573,18 +677,20 @@ router.put('/general-profiles/:id', authMiddleware, adminLimiter, async (req, re
                     ? (menuPdf && String(menuPdf).trim() ? 'restaurant' : 'general')
                     : profile.profileType || 'general';
 
-        if (username !== undefined) {
-            const normalizedUsername = (username || '').toLowerCase().trim().replace(/\s+/g, '_');
+        if (username !== undefined || req.body.ownerEmail !== undefined) {
+            const normalizedUsername = (username || profile.username).toLowerCase().trim().replace(/\s+/g, '_');
+            const normalizedEmail = (req.body.ownerEmail || profile.ownerEmail);
+            
             if (!normalizedUsername || !/^[a-z0-9_-]+$/.test(normalizedUsername)) {
                 return res.status(400).json({ success: false, message: 'Invalid username format.' });
             }
-            if (normalizedUsername !== profile.username) {
-                const taken = await GeneralProfile.findOne({ username: normalizedUsername });
-                if (taken) {
-                    return res.status(400).json({ success: false, message: 'Username is already taken.' });
-                }
-                profile.username = normalizedUsername;
+
+            const conflict = await checkProfileConflict(normalizedUsername, normalizedEmail, req.params.id);
+            if (conflict) {
+                return res.status(400).json({ success: false, message: conflict });
             }
+            profile.username = normalizedUsername;
+            if (req.body.ownerEmail !== undefined) profile.ownerEmail = normalizedEmail;
         }
         if (name !== undefined) profile.name = name;
         if (title !== undefined) profile.title = title;

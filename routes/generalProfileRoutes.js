@@ -4,8 +4,36 @@ const multer = require('multer');
 const GeneralProfile = require('../models/GeneralProfile');
 const { firebaseAuth } = require('../middleware/firebaseAuth');
 const { uploadBuffer } = require('../utils/cloudinary');
+const { checkProfileConflict, getProfileConflicts, generateUsernameSuggestions } = require('../utils/profileUtils');
+
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
+
+// @route   GET /api/general-profile/check-availability
+// @desc    Check if username or email is taken (cross-collection)
+// @access  Public
+router.get('/check-availability', async (req, res) => {
+    try {
+        const { username, email, excludeId } = req.query;
+        const conflicts = await getProfileConflicts(username, email, excludeId);
+        const hasConflict = !!(conflicts.username || conflicts.email);
+        
+        let suggestions = [];
+        if (conflicts.username && username) {
+            suggestions = await generateUsernameSuggestions(username);
+        }
+
+        res.json({ 
+            success: true, 
+            available: !hasConflict, 
+            conflicts: conflicts,
+            suggestions: suggestions
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
 
 function normalizeGalleryInput(raw) {
     if (!Array.isArray(raw)) return [];
@@ -166,34 +194,15 @@ router.post('/', firebaseAuth, async (req, res) => {
         const { username, name, title, bio, photo, banner, menuPdf, theme, font, bioFont, links, social, gallery } = req.body;
         const requestedType = normalizeProfileType(req.body.profileType || req.body.type || 'general');
 
-        const ownerCond = { $or: [{ ownerUid: uid }, { ownerEmail: email }] };
-        const typeCond = buildTypeQueryCond(requestedType);
-        const existing = await GeneralProfile.findOne({ $and: [ownerCond, typeCond] });
-        if (existing) {
-            return res.status(400).json({
-                success: false,
-                message: `You already have a ${requestedType} profile. Use update instead.`
-            });
-        }
-
         const normalizedUsername = (username || '').toLowerCase().trim().replace(/\s+/g, '_');
-        if (!normalizedUsername || !/^[a-z0-9_-]+$/.test(normalizedUsername)) {
-            return res.status(400).json({
-                success: false,
-                message: 'Username must contain only letters, numbers, underscores, and hyphens.'
-            });
-        }
-
-        const taken = await GeneralProfile.findOne({ username: normalizedUsername });
-        if (taken) {
-            return res.status(400).json({
-                success: false,
-                message: 'Username is already taken.'
-            });
+        const conflict = await checkProfileConflict(normalizedUsername, email);
+        if (conflict) {
+            return res.status(400).json({ success: false, message: conflict });
         }
 
         const profile = await GeneralProfile.create({
             username: normalizedUsername,
+
             name: name || '',
             title: title || '',
             bio: bio || '',

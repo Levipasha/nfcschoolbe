@@ -11,6 +11,8 @@ const { uploadBuffer } = require('../utils/cloudinary');
 const { firebaseAuth } = require('../middleware/firebaseAuth');
 const { generateOtp, setOtp, consumeOtp } = require('../utils/otpStore');
 const { sendOtpEmail, isConfigured: isSmtpConfigured } = require('../utils/sendMail');
+const { checkProfileConflict } = require('../utils/profileUtils');
+
 
 // Multer memory → Cloudinary. Default 50MB; set ARTIST_UPLOAD_MAX_MB (10–512) in .env to adjust.
 const _uploadMb = parseInt(process.env.ARTIST_UPLOAD_MAX_MB, 10);
@@ -42,7 +44,7 @@ router.post('/check-account', async (req, res) => {
         }
         const re = new RegExp('^' + email.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '$', 'i');
         const [artistCount, generalCount] = await Promise.all([
-            Artist.countDocuments({ isActive: true, isSetup: true, $or: [{ ownerEmail: re }, { email: re }] }),
+            Artist.countDocuments({ isActive: true, $or: [{ ownerEmail: re }, { email: re }] }),
             GeneralProfile.countDocuments({ ownerEmail: re })
         ]);
         res.json({ success: true, exists: (artistCount + generalCount) > 0 });
@@ -111,7 +113,6 @@ router.post('/send-otp', async (req, res) => {
         const [artistCount, generalCount] = await Promise.all([
             Artist.countDocuments({
                 isActive: true,
-                isSetup: true, // Only fully setup artists count as "existing" for login/signup choice
                 $or: [{ ownerEmail: re }, { email: re }]
             }),
             GeneralProfile.countDocuments({ ownerEmail: re })
@@ -181,7 +182,6 @@ router.post('/verify-otp', async (req, res) => {
         const [artistCount, generalCount] = await Promise.all([
             Artist.countDocuments({
                 isActive: true,
-                isSetup: true,
                 $or: [{ ownerEmail: re }, { email: re }]
             }),
             GeneralProfile.countDocuments({ ownerEmail: re })
@@ -233,12 +233,12 @@ router.get('/', async (req, res) => {
     }
 });
 
-// @route   GET /api/artist/profile
-// @desc    Get artist profile by public ID (e.g. ?id=AT-01)
+// @route   GET /api/artist/u/:id
+// @desc    Get artist profile by public ID (e.g. /u/AT-01)
 // @access  Public
-router.get('/profile', async (req, res) => {
+router.get('/u/:id', async (req, res) => {
     try {
-        const { id } = req.query;
+        const { id } = req.params;
 
         if (!id) {
             return res.status(400).json({
@@ -247,13 +247,7 @@ router.get('/profile', async (req, res) => {
             });
         }
 
-        // Flexible lookup: try exact match, then try with prefix if it looks like just a number
-        let artist = await Artist.findOne({ artistId: id, isActive: true });
-
-        if (!artist && /^\d+$/.test(id)) {
-            const prefixedId = `AT-${id.padStart(2, '0')}`;
-            artist = await Artist.findOne({ artistId: prefixedId, isActive: true });
-        }
+        const artist = await Artist.findOne({ artistId: id, isActive: true });
 
         if (!artist) {
             return res.status(404).json({
@@ -327,10 +321,8 @@ router.get('/public/:artistId', async (req, res) => {
         // Flexible lookup: first by artistId, then support numeric IDs similar to /profile
         let artist = await Artist.findOne({ artistId, isActive: true });
 
-        if (!artist && /^\d+$/.test(artistId)) {
-            const prefixedId = `AT-${artistId.padStart(2, '0')}`;
-            artist = await Artist.findOne({ artistId: prefixedId, isActive: true });
-        }
+        // Removed numeric AT- fallback as requested.
+
 
         if (!artist) {
             return res.status(404).json({
@@ -414,6 +406,49 @@ router.get('/:id', async (req, res, next) => {
         res.status(500).json({
             success: false,
             message: 'Error fetching artist',
+            error: error.message
+        });
+    }
+});
+
+// @route   GET /api/artist/:artistId/master-art
+// @desc    Get the primary-marked art showcase for an artist (Master Art URL logic)
+// @access  Public
+router.get('/:artistId/master-art', async (req, res) => {
+    try {
+        const artist = await Artist.findOne({ artistId: req.params.artistId.toLowerCase() });
+
+        if (!artist) {
+            return res.status(404).json({
+                success: false,
+                message: 'Artist not found'
+            });
+        }
+
+        // Find primary art in artLinks array
+        const artItems = Array.isArray(artist.artLinks) ? artist.artLinks : [];
+        const primaryArt = artItems.find(item => item.isPrimary === true) || artItems[0];
+
+        if (!primaryArt) {
+            return res.status(404).json({
+                success: false,
+                message: 'No art showcases found for this artist'
+            });
+        }
+
+        res.json({
+            success: true,
+            data: primaryArt,
+            artist: {
+                name: artist.name,
+                artistId: artist.artistId
+            }
+        });
+    } catch (error) {
+        console.error('Error fetching master art:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error fetching master art',
             error: error.message
         });
     }
@@ -510,12 +545,23 @@ router.get('/code/:code', async (req, res) => {
 // Create new artist
 router.post('/', async (req, res) => {
     try {
+        const normalizedArtistId = (req.body.artistId || '').toLowerCase().trim().replace(/\s+/g, '_');
+
+        const normalizedEmail = (req.body.ownerEmail || req.body.email || '').toLowerCase().trim();
+
+        const conflict = await checkProfileConflict(normalizedArtistId, normalizedEmail);
+        if (conflict) {
+            return res.status(400).json({ success: false, message: conflict });
+        }
+
         const artistData = {
+            artistId: normalizedArtistId,
+            ownerEmail: normalizedEmail,
             name: req.body.name,
             bio: req.body.bio || '',
             photo: req.body.photo || undefined,
             phone: req.body.phone || '',
-            email: req.body.email || '',
+            email: normalizedEmail,
             website: req.body.website || '',
             instagram: req.body.instagram || '',
             facebook: req.body.facebook || '',
@@ -529,6 +575,7 @@ router.post('/', async (req, res) => {
 
         const artist = new Artist(artistData);
         await artist.save();
+
 
         res.status(201).json({
             success: true,
@@ -674,29 +721,26 @@ router.get('/stats/overview', async (req, res) => {
 router.post('/quick-create', async (req, res) => {
     try {
         const { artistId, name, email } = req.body || {};
+        const normalizedArtistId = (artistId || '').toLowerCase().trim().replace(/\s+/g, '_') || `admin-${Date.now()}`;
 
-        if (artistId) {
-            const existing = await Artist.findOne({ artistId });
-            if (existing) {
-                return res.status(400).json({
-                    success: false,
-                    message: 'Artist ID already taken'
-                });
-            }
+        const normalizedEmail = (email || '').toLowerCase().trim();
+
+        const conflict = await checkProfileConflict(normalizedArtistId, normalizedEmail);
+        if (conflict) {
+            return res.status(400).json({ success: false, message: conflict });
         }
 
-        const adminEmail = (email || '').toLowerCase().trim();
-
         const artist = new Artist({
-            artistId: artistId || `admin-${Date.now()}`,
+            artistId: normalizedArtistId,
             name: name || 'New Artist',
-            ownerEmail: adminEmail || undefined,
-            email: adminEmail || undefined,
+            ownerEmail: normalizedEmail || undefined,
+            email: normalizedEmail || undefined,
             isSetup: false,
             isActive: true
         });
 
         await artist.save();
+
 
         res.status(201).json({
             success: true,
@@ -768,20 +812,19 @@ router.get('/my-profiles', firebaseAuth, async (req, res) => {
 // POST /api/artist/my-profiles - Create a new barebones artist profile
 router.post('/my-profiles', firebaseAuth, async (req, res) => {
     try {
+        const { artistId, name } = req.body || {};
         const email = (req.firebaseUser.email || '').toLowerCase().trim();
         const uid = req.firebaseUser.uid || null;
 
-        const { artistId, name } = req.body;
-
-        if (artistId) {
-            const existing = await Artist.findOne({ artistId });
-            if (existing) {
-                return res.status(400).json({ success: false, message: 'Username already taken' });
-            }
+        const normalizedArtistId = (artistId || '').toLowerCase().trim().replace(/\s+/g, '_') || `user-${Date.now()}`;
+        const conflict = await checkProfileConflict(normalizedArtistId, email);
+        if (conflict) {
+            return res.status(400).json({ success: false, message: conflict });
         }
 
         const artist = new Artist({
-            artistId: artistId || `user-${Date.now()}`,
+            artistId: normalizedArtistId,
+
             name: name || 'New Artist',
             ownerEmail: email,
             ownerUid: uid,

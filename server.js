@@ -144,6 +144,7 @@ app.use('/api/sessions', require('./routes/sessionRoutes'));
 app.use('/api/artist', require('./routes/artistRoutes'));
 app.use('/api/general-profile', require('./routes/generalProfileRoutes'));
 
+
 // Contact route (placeholder for landing page)
 app.post('/api/contact', (req, res) => {
     console.log('Contact form submission:', req.body);

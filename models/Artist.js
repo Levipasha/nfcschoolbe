@@ -306,25 +306,9 @@ artistSchema.pre('validate', async function (next) {
     }
 
     try {
-        // 1. Generate Artist ID (AT-01, AT-02, etc.)
-        if (!this.artistId) {
-            const basePrefix = 'AT-';
+        // Artist ID (AT-01, etc.) auto-generation removed as requested.
+        // We now rely on provided artistId or fallback to other identifiers.
 
-            // Find the highest artistId
-            const lastArtist = await this.constructor.findOne({
-                artistId: new RegExp(`^${basePrefix}\\d+$`)
-            }).sort({ artistId: -1 }).lean();
-
-            let nextNumber = 1;
-            if (lastArtist && lastArtist.artistId) {
-                const match = lastArtist.artistId.match(/\d+$/);
-                if (match) {
-                    nextNumber = parseInt(match[0]) + 1;
-                }
-            }
-
-            this.artistId = `${basePrefix}${String(nextNumber).padStart(2, '0')}`;
-        }
 
         // 2. Consistent Artist Code (codeNumber must be a finite number — custom slugs like "capvamshi" have no "-NN" tail)
         if (!this.code) {
