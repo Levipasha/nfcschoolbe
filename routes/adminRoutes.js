@@ -16,7 +16,7 @@ const { checkProfileConflict, getProfileConflicts, generateUsernameSuggestions }
 const { adminLimiter, loginLimiter } = require('../middleware/rateLimiter');
 const { validateStudentData, resolveStudentClassFromSchoolClass } = require('../middleware/validator');
 const { generateOtp, setAdminOtp, consumeAdminOtp } = require('../utils/otpStore');
-const { sendOtpEmail, isConfigured: isSmtpConfigured } = require('../utils/sendMail');
+const { sendOtpEmail, sendWelcomeEmail, isConfigured: isSmtpConfigured } = require('../utils/sendMail');
 const multer = require('multer');
 const { uploadBuffer } = require('../utils/cloudinary');
 
@@ -606,6 +606,13 @@ router.post('/general-profiles', authMiddleware, adminLimiter, async (req, res) 
             ownerEmail: (req.body.ownerEmail || '').toLowerCase().trim()
         });
         res.json({ success: true, data: profile });
+        
+        // Send welcome email asynchronously
+        if (isSmtpConfigured()) {
+            sendWelcomeEmail(profile.ownerEmail, profile.name, profile.username).catch(err => {
+                console.error('Error sending welcome email to general profile:', err.message);
+            });
+        }
     } catch (error) {
         console.error('Error creating general profile:', error);
         res.status(500).json({ success: false, message: error.message || 'Error creating profile' });
@@ -656,6 +663,13 @@ router.post('/artists', authMiddleware, adminLimiter, async (req, res) => {
             message: 'Artist profile created successfully',
             data: saved 
         });
+
+        // Send welcome email asynchronously
+        if (isSmtpConfigured()) {
+            sendWelcomeEmail(normalizedEmail, name || 'Artist', normalizedUsername).catch(err => {
+                console.error('Error sending welcome email to artist:', err.message);
+            });
+        }
     } catch (error) {
         console.error('Error creating artist profile:', error);
         res.status(500).json({ success: false, message: error.message || 'Error creating artist' });

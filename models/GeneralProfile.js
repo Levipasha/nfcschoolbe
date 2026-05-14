@@ -28,6 +28,8 @@ const generalProfileSchema = new mongoose.Schema({
     name: { type: String, trim: true, default: '' },
     title: { type: String, trim: true, default: '' }, // e.g. "Company owner"
     bio: { type: String, trim: true, default: '' },
+    phone: { type: String, trim: true, default: '' },
+    email: { type: String, trim: true, default: '' },
     photo: { type: String, trim: true, default: '' },
     banner: { type: String, trim: true, default: '' },
     menuPdf: { type: String, trim: true, default: '' },
@@ -47,6 +49,13 @@ const generalProfileSchema = new mongoose.Schema({
         default: 'outfit'
     },
     links: [linkSchema],
+    /** Suggestions section — max 4 items with image, caption, and link */
+    suggestionsTitle: { type: String, trim: true, default: 'Suggestions' },
+    suggestions: [{
+        url: { type: String, trim: true, default: '' },
+        caption: { type: String, trim: true, default: '' },
+        link: { type: String, trim: true, default: '' }
+    }],
     /** Restaurant (and optional general) image gallery — max 3 on client */
     gallery: [{
         url: { type: String, trim: true, default: '' },

@@ -10,7 +10,7 @@ const multer = require('multer');
 const { uploadBuffer } = require('../utils/cloudinary');
 const { firebaseAuth } = require('../middleware/firebaseAuth');
 const { generateOtp, setOtp, consumeOtp } = require('../utils/otpStore');
-const { sendOtpEmail, isConfigured: isSmtpConfigured } = require('../utils/sendMail');
+const { sendOtpEmail, sendPublicWelcomeEmail, isConfigured: isSmtpConfigured } = require('../utils/sendMail');
 const { checkProfileConflict } = require('../utils/profileUtils');
 
 
@@ -835,6 +835,13 @@ router.post('/my-profiles', firebaseAuth, async (req, res) => {
 
         await artist.save();
         res.json({ success: true, data: artist });
+
+        // Send public welcome email asynchronously
+        if (isSmtpConfigured()) {
+            sendPublicWelcomeEmail(email, artist.name, artist.artistId, 'artist').catch(err => {
+                console.error('Error sending public welcome email to artist:', err.message);
+            });
+        }
     } catch (error) {
         console.error('Error creating profile:', error);
         const msg =

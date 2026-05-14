@@ -5,6 +5,8 @@ const GeneralProfile = require('../models/GeneralProfile');
 const { firebaseAuth } = require('../middleware/firebaseAuth');
 const { uploadBuffer } = require('../utils/cloudinary');
 const { checkProfileConflict, getProfileConflicts, generateUsernameSuggestions } = require('../utils/profileUtils');
+const { sendPublicWelcomeEmail, isConfigured: isSmtpConfigured } = require('../utils/sendMail');
+const axios = require('axios');
 
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
@@ -35,6 +37,52 @@ router.get('/check-availability', async (req, res) => {
 });
 
 
+// @route   GET /api/general-profile/fetch-metadata
+// @desc    Fetch title from a URL
+// @access  Public
+router.get('/fetch-metadata', async (req, res) => {
+    try {
+        let { url } = req.query;
+        if (!url) return res.status(400).json({ success: false, message: 'URL is required' });
+        
+        if (!url.startsWith('http')) {
+            url = 'https://' + url;
+        }
+
+        const response = await axios.get(url, {
+            headers: { 
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+                'Accept-Language': 'en-US,en;q=0.9'
+            },
+            timeout: 8000,
+            maxRedirects: 5,
+            validateStatus: (status) => status < 500
+        });
+
+        if (typeof response.data !== 'string') {
+            return res.json({ success: true, title: '' });
+        }
+
+        const html = response.data;
+        const titleMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i);
+        let title = titleMatch ? titleMatch[1].trim() : '';
+
+        // Decode basic HTML entities if needed (common in titles)
+        title = title.replace(/&amp;/g, '&')
+                    .replace(/&lt;/g, '<')
+                    .replace(/&gt;/g, '>')
+                    .replace(/&quot;/g, '"')
+                    .replace(/&#039;/g, "'");
+
+        res.json({ success: true, title: title.slice(0, 200) });
+    } catch (error) {
+        // Silent fail for titles, just return success with empty title
+        res.json({ success: true, title: '' });
+    }
+});
+
+
 function normalizeGalleryInput(raw) {
     if (!Array.isArray(raw)) return [];
     return raw
@@ -44,6 +92,18 @@ function normalizeGalleryInput(raw) {
             name: typeof g?.name === 'string' ? g.name.trim().slice(0, 200) : ''
         }))
         .filter((g) => g.url);
+}
+
+function normalizeSuggestionsInput(raw) {
+    if (!Array.isArray(raw)) return [];
+    return raw
+        .slice(0, 4)
+        .map((s) => ({
+            url: typeof s?.url === 'string' ? s.url.trim() : '',
+            caption: typeof s?.caption === 'string' ? s.caption.trim().slice(0, 200) : '',
+            link: typeof s?.link === 'string' ? s.link.trim() : ''
+        }))
+        .filter((s) => s.url);
 }
 
 function normalizeProfileType(raw) {
@@ -121,6 +181,8 @@ router.get('/u/:username', async (req, res) => {
                 name: profile.name,
                 title: profile.title,
                 bio: profile.bio,
+                phone: profile.phone || '',
+                email: profile.email || profile.ownerEmail || '',
                 photo: profile.photo,
                 banner: profile.banner || '',
                 menuPdf: profile.menuPdf || '',
@@ -130,7 +192,9 @@ router.get('/u/:username', async (req, res) => {
                 links: profile.links || [],
                 social: profile.social || {},
                 profileType: profile.profileType || 'general',
-                gallery: normalizeGalleryInput(profile.gallery)
+                gallery: normalizeGalleryInput(profile.gallery),
+                suggestionsTitle: profile.suggestionsTitle || 'Suggestions',
+                suggestions: normalizeSuggestionsInput(profile.suggestions)
             }
         });
     } catch (error) {
@@ -164,6 +228,8 @@ router.get('/me', firebaseAuth, async (req, res) => {
                 name: profile.name,
                 title: profile.title,
                 bio: profile.bio,
+                phone: profile.phone || '',
+                email: profile.email || '',
                 photo: profile.photo,
                 banner: profile.banner || '',
                 menuPdf: profile.menuPdf || '',
@@ -173,7 +239,9 @@ router.get('/me', firebaseAuth, async (req, res) => {
                 links: profile.links || [],
                 social: profile.social || {},
                 profileType: profile.profileType || requestedType,
-                gallery: normalizeGalleryInput(profile.gallery)
+                gallery: normalizeGalleryInput(profile.gallery),
+                suggestionsTitle: profile.suggestionsTitle || 'Suggestions',
+                suggestions: normalizeSuggestionsInput(profile.suggestions)
             }
         });
     } catch (error) {
@@ -191,7 +259,7 @@ router.get('/me', firebaseAuth, async (req, res) => {
 router.post('/', firebaseAuth, async (req, res) => {
     try {
         const { uid, email } = req.firebaseUser;
-        const { username, name, title, bio, photo, banner, menuPdf, theme, font, bioFont, links, social, gallery } = req.body;
+        const { username, name, title, bio, phone, email: contactEmail, photo, banner, menuPdf, theme, font, bioFont, links, social, gallery, suggestions, suggestionsTitle } = req.body;
         const requestedType = normalizeProfileType(req.body.profileType || req.body.type || 'general');
 
         const normalizedUsername = (username || '').toLowerCase().trim().replace(/\s+/g, '_');
@@ -206,6 +274,8 @@ router.post('/', firebaseAuth, async (req, res) => {
             name: name || '',
             title: title || '',
             bio: bio || '',
+            phone: phone || '',
+            email: contactEmail || '',
             photo: photo || '',
             banner: banner || '',
             menuPdf: menuPdf || '',
@@ -215,6 +285,8 @@ router.post('/', firebaseAuth, async (req, res) => {
             links: Array.isArray(links) ? links : [],
             social: social || {},
             gallery: normalizeGalleryInput(gallery),
+            suggestionsTitle: suggestionsTitle || 'Suggestions',
+            suggestions: normalizeSuggestionsInput(suggestions),
             profileType: requestedType,
             ownerEmail: email,
             ownerUid: uid
@@ -227,6 +299,8 @@ router.post('/', firebaseAuth, async (req, res) => {
                 name: profile.name,
                 title: profile.title,
                 bio: profile.bio,
+                phone: profile.phone || '',
+                email: profile.email || '',
                 photo: profile.photo,
                 banner: profile.banner || '',
                 menuPdf: profile.menuPdf || '',
@@ -236,9 +310,18 @@ router.post('/', firebaseAuth, async (req, res) => {
                 links: profile.links,
                 social: profile.social,
                 profileType: profile.profileType,
-                gallery: normalizeGalleryInput(profile.gallery)
+                gallery: normalizeGalleryInput(profile.gallery),
+                suggestionsTitle: profile.suggestionsTitle || 'Suggestions',
+                suggestions: normalizeSuggestionsInput(profile.suggestions)
             }
         });
+
+        // Send public welcome email asynchronously
+        if (isSmtpConfigured()) {
+            sendPublicWelcomeEmail(email, profile.name, profile.username, profile.profileType).catch(err => {
+                console.error(`Error sending public welcome email to ${profile.profileType}:`, err.message);
+            });
+        }
     } catch (error) {
         console.error('Error creating general profile:', error);
         res.status(500).json({
@@ -254,7 +337,7 @@ router.post('/', firebaseAuth, async (req, res) => {
 router.put('/me', firebaseAuth, async (req, res) => {
     try {
         const { uid, email } = req.firebaseUser;
-        const { username, name, title, bio, photo, banner, menuPdf, theme, font, bioFont, links, social, gallery } = req.body;
+        const { username, name, title, bio, phone, email: contactEmail, photo, banner, menuPdf, theme, font, bioFont, links, social, gallery, suggestions, suggestionsTitle } = req.body;
         const requestedType = normalizeProfileType(req.body.profileType || req.body.type || 'general');
 
         const ownerCond = { $or: [{ ownerUid: uid }, { ownerEmail: email }] };
@@ -276,6 +359,8 @@ router.put('/me', firebaseAuth, async (req, res) => {
         if (name !== undefined) updates.name = name;
         if (title !== undefined) updates.title = title;
         if (bio !== undefined) updates.bio = bio;
+        if (phone !== undefined) updates.phone = phone;
+        if (contactEmail !== undefined) updates.email = contactEmail;
         if (photo !== undefined) updates.photo = photo;
         if (banner !== undefined) updates.banner = banner;
         if (menuPdf !== undefined) updates.menuPdf = menuPdf;
@@ -285,6 +370,8 @@ router.put('/me', firebaseAuth, async (req, res) => {
         if (Array.isArray(links)) updates.links = links;
         if (social && typeof social === 'object') updates.social = { ...profile.social, ...social };
         if (gallery !== undefined) updates.gallery = normalizeGalleryInput(gallery);
+        if (suggestionsTitle !== undefined) updates.suggestionsTitle = suggestionsTitle;
+        if (suggestions !== undefined) updates.suggestions = normalizeSuggestionsInput(suggestions);
 
         if (username !== undefined) {
             const normalizedUsername = (username || '').toLowerCase().trim().replace(/\s+/g, '_');
@@ -316,6 +403,8 @@ router.put('/me', firebaseAuth, async (req, res) => {
                 name: profile.name,
                 title: profile.title,
                 bio: profile.bio,
+                phone: profile.phone || '',
+                email: profile.email || '',
                 photo: profile.photo,
                 banner: profile.banner || '',
                 menuPdf: profile.menuPdf || '',
@@ -325,7 +414,9 @@ router.put('/me', firebaseAuth, async (req, res) => {
                 links: profile.links,
                 social: profile.social,
                 profileType: profile.profileType,
-                gallery: normalizeGalleryInput(profile.gallery)
+                gallery: normalizeGalleryInput(profile.gallery),
+                suggestionsTitle: profile.suggestionsTitle || 'Suggestions',
+                suggestions: normalizeSuggestionsInput(profile.suggestions)
             }
         });
     } catch (error) {
@@ -396,7 +487,9 @@ router.get('/sample', async (req, res) => {
                 links: profile.links || [],
                 social: profile.social || {},
                 profileType: profile.profileType || 'general',
-                gallery: normalizeGalleryInput(profile.gallery)
+                gallery: normalizeGalleryInput(profile.gallery),
+                suggestionsTitle: profile.suggestionsTitle || 'Suggestions',
+                suggestions: normalizeSuggestionsInput(profile.suggestions)
             }
         });
     } catch (error) {
