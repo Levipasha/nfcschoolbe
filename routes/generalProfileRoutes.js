@@ -166,6 +166,7 @@ function mapGeneralProfileResponse(profile, requestedType) {
         gallery: normalizeGalleryInput(profile.gallery),
         suggestionsTitle: profile.suggestionsTitle || 'Suggestions',
         suggestions: normalizeSuggestionsInput(profile.suggestions),
+        isSetup: profile.isSetup || false,
         showPhoto: profile.showPhoto !== false,
         showName: profile.showName !== false,
         showLocation: profile.showLocation !== false,
@@ -260,7 +261,7 @@ router.post('/', firebaseAuth, async (req, res) => {
     try {
         const { uid, email } = req.firebaseUser;
         const { username, name, title, bio, phone, email: contactEmail, photo, banner, menuPdf, theme, font, bioFont, links, social, gallery, suggestions, suggestionsTitle, city, state, specialization,
-            showPhoto, showName, showLocation, showSpecialization, showAbout, showConnect, showWhatIDo, showArtPortfolio, showGallery, artLinks } = req.body;
+            showPhoto, showName, showLocation, showSpecialization, showAbout, showConnect, showWhatIDo, showArtPortfolio, showGallery, artLinks, isSetup } = req.body;
         const requestedType = normalizeProfileType(req.body.profileType || req.body.type || 'general');
 
         const normalizedUsername = (username || '').toLowerCase().trim().replace(/\s+/g, '_');
@@ -294,6 +295,7 @@ router.post('/', firebaseAuth, async (req, res) => {
             profileType: requestedType,
             ownerEmail: email,
             ownerUid: uid,
+            isSetup: isSetup || false,
             showPhoto: showPhoto !== false,
             showName: showName !== false,
             showLocation: showLocation !== false,
@@ -333,7 +335,7 @@ router.put('/me', firebaseAuth, async (req, res) => {
     try {
         const { uid, email } = req.firebaseUser;
         const { username, name, title, bio, phone, email: contactEmail, photo, banner, menuPdf, theme, font, bioFont, links, social, gallery, suggestions, suggestionsTitle, city, state, specialization,
-            showPhoto, showName, showLocation, showSpecialization, showAbout, showConnect, showWhatIDo, showArtPortfolio, showGallery, artLinks } = req.body;
+            showPhoto, showName, showLocation, showSpecialization, showAbout, showConnect, showWhatIDo, showArtPortfolio, showGallery, artLinks, isSetup } = req.body;
         const requestedType = normalizeProfileType(req.body.profileType || req.body.type || 'general');
 
         const ownerCond = { $or: [{ ownerUid: uid }, { ownerEmail: email }] };
@@ -381,6 +383,7 @@ router.put('/me', firebaseAuth, async (req, res) => {
         if (showArtPortfolio !== undefined) updates.showArtPortfolio = showArtPortfolio;
         if (showGallery !== undefined) updates.showGallery = showGallery;
         if (artLinks !== undefined) updates.artLinks = artLinks;
+        if (isSetup !== undefined) updates.isSetup = isSetup;
 
         if (username !== undefined) {
             const normalizedUsername = (username || '').toLowerCase().trim().replace(/\s+/g, '_');
