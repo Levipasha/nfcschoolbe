@@ -20,6 +20,11 @@ const app = express();
 // Trust proxy - Required for Railway/Vercel to handle rate limiting correctly
 app.set('trust proxy', 1);
 
+const isProduction = process.env.NODE_ENV === 'production';
+const devLog = (...args) => {
+    if (!isProduction) console.log(...args);
+};
+
 // Database Connection
 const MONGODB_URI = process.env.MONGODB_URI;
 
@@ -41,15 +46,24 @@ app.use(helmet({
         useDefaults: false,
         directives: {
             "default-src": ["'self'"],
-            "frame-ancestors": ["*"],
-            "img-src": ["'self'", "data:", "https://res.cloudinary.com", "*"],
-            "script-src": ["'self'", "'unsafe-inline'", "'unsafe-eval'", "https://*.firebaseapp.com", "https://*.googleapis.com", "*"],
-            "style-src": ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com", "*"],
-            "font-src": ["'self'", "https://fonts.gstatic.com", "*"],
-            "connect-src": ["'self'", "*"],
+            "base-uri": ["'self'"],
+            "frame-ancestors": [
+                "'self'",
+                "https://nanoprofiles.com",
+                "https://www.nanoprofiles.com",
+                "https://profiles.nanoprofiles.com",
+                "https://skywebdev.xyz",
+                "https://www.skywebdev.xyz",
+                "https://*.vercel.app"
+            ],
+            "img-src": ["'self'", "data:", "blob:", "https:"],
+            "script-src": ["'self'", "https://*.firebaseapp.com", "https://*.googleapis.com"],
+            "style-src": ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
+            "font-src": ["'self'", "https://fonts.gstatic.com", "data:"],
+            "connect-src": ["'self'", "https://*.firebaseapp.com", "https://*.googleapis.com", "https://*.google.com", "https://res.cloudinary.com", "https://api.cloudinary.com", "https://*.vercel.app", "https://*.railway.app", "https://*.up.railway.app", "https://*.render.com"],
             "object-src": ["'none'"],
-            "media-src": ["'self'"],
-            "frame-src": ["'self'", "https://*.firebaseapp.com", "*"],
+            "media-src": ["'self'", "blob:", "https:"],
+            "frame-src": ["'self'", "https://*.firebaseapp.com", "https://*.google.com"],
         },
     },
     frameguard: false, // Disable X-Frame-Options: SAMEORIGIN
@@ -83,8 +97,8 @@ const corsOptions = {
             return callback(null, true);
         }
 
-        // Allow all origins if explicitly enabled via env var (useful for staging)
-        if (process.env.CORS_ALLOW_ALL === 'true') {
+        // Allow all origins only outside production when explicitly enabled.
+        if (!isProduction && process.env.CORS_ALLOW_ALL === 'true') {
             return callback(null, true);
         }
 
@@ -96,7 +110,7 @@ const corsOptions = {
         if (isAllowed) {
             callback(null, true);
         } else {
-            console.log('Blocked by CORS:', origin);
+            devLog('Blocked by CORS:', origin);
             callback(new Error('Not allowed by CORS'));
         }
     },
@@ -113,7 +127,7 @@ app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
 // Request logger for local debugging
 app.use((req, res, next) => {
-    console.log(`[${new Date().toISOString()}] ${req.method} ${req.url} - Origin: ${req.headers.origin}`);
+    devLog(`[${new Date().toISOString()}] ${req.method} ${req.url} - Origin: ${req.headers.origin}`);
     next();
 });
 
@@ -147,7 +161,7 @@ app.use('/api/general-profile', require('./routes/generalProfileRoutes'));
 
 // Contact route (placeholder for landing page)
 app.post('/api/contact', (req, res) => {
-    console.log('Contact form submission:', req.body);
+    devLog('Contact form submission received');
     res.json({ success: true, message: 'Message received! We will get back to you soon.' });
 });
 
@@ -158,7 +172,6 @@ app.use('/p', express.static(adminPath)); // Admin handles /p/:token routes
 
 // Handle Admin/NFC subroutes
 app.get(['/admin/*', '/p/*'], (req, res) => {
-    res.setHeader("Content-Security-Policy", "frame-ancestors *");
     res.sendFile(path.join(adminPath, 'index.html'));
 });
 
@@ -174,7 +187,6 @@ app.get('*', (req, res, next) => {
     }
     
     // Serve landing page for all other frontend routes
-    res.setHeader("Content-Security-Policy", "frame-ancestors *");
     res.sendFile(path.join(landingPagePath, 'index.html'));
 });
 

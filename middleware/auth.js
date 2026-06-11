@@ -1,18 +1,26 @@
 const jwt = require('jsonwebtoken');
 
+function getCookie(req, name) {
+    const cookieHeader = req.headers.cookie || '';
+    const cookies = cookieHeader.split(';').map(part => part.trim()).filter(Boolean);
+    const match = cookies.find(cookie => cookie.startsWith(`${name}=`));
+    return match ? decodeURIComponent(match.slice(name.length + 1)) : '';
+}
+
 const authMiddleware = (req, res, next) => {
     try {
-        // Get token from header
         const authHeader = req.headers.authorization;
+        const bearerToken = authHeader && authHeader.startsWith('Bearer ')
+            ? authHeader.split(' ')[1]
+            : '';
+        const token = bearerToken || getCookie(req, 'admin_token');
 
-        if (!authHeader || !authHeader.startsWith('Bearer ')) {
+        if (!token) {
             return res.status(401).json({
                 success: false,
                 message: 'No token provided, authorization denied'
             });
         }
-
-        const token = authHeader.split(' ')[1];
 
         // Verify token
         const decoded = jwt.verify(token, process.env.JWT_SECRET);

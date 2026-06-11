@@ -20,6 +20,14 @@ const { sendOtpEmail, sendWelcomeEmail, isConfigured: isSmtpConfigured } = requi
 const multer = require('multer');
 const { uploadBuffer } = require('../utils/cloudinary');
 
+const adminCookieOptions = {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+    maxAge: 24 * 60 * 60 * 1000,
+    path: '/'
+};
+
 // @route   GET /api/admin/check-availability
 // @desc    Check if username or email is taken (cross-collection)
 // @access  Protected
@@ -100,16 +108,36 @@ router.post('/verify-otp', loginLimiter, async (req, res) => {
             process.env.JWT_SECRET,
             { expiresIn: '24h' }
         );
+        res.cookie('admin_token', token, adminCookieOptions);
         res.json({
             success: true,
             message: 'Login successful',
-            token,
             admin: { email }
         });
     } catch (error) {
         console.error('Verify OTP error:', error);
         res.status(500).json({ success: false, message: error.message || 'Verification failed.' });
     }
+});
+
+// @route   GET /api/admin/session
+// @desc    Check whether the admin auth cookie/bearer token is valid
+// @access  Protected
+router.get('/session', authMiddleware, adminLimiter, (req, res) => {
+    res.json({ success: true, admin: { email: req.admin.email } });
+});
+
+// @route   POST /api/admin/logout
+// @desc    Clear admin auth cookie
+// @access  Public
+router.post('/logout', (req, res) => {
+    res.clearCookie('admin_token', {
+        httpOnly: adminCookieOptions.httpOnly,
+        secure: adminCookieOptions.secure,
+        sameSite: adminCookieOptions.sameSite,
+        path: adminCookieOptions.path
+    });
+    res.json({ success: true, message: 'Logged out' });
 });
 
 // @route   GET /api/admin/students

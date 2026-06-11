@@ -2,8 +2,13 @@ const mongoose = require('mongoose');
 
 const linkSchema = new mongoose.Schema({
     title: { type: String, trim: true, default: '' },
-    url: { type: String, trim: true, required: true },
+    url: { type: String, trim: true, default: '' },
     platform: { type: String, trim: true, default: '' }, // website, portfolio, pinterest, instagram, youtube, etc.
+    image: { type: String, trim: true, default: '' },
+    layoutType: { type: String, trim: true, default: 'classic' },
+    prioritizeType: { type: String, trim: true, default: 'none' }, // 'none', 'animate', 'redirect'
+    animationType: { type: String, trim: true, default: 'buzz' }, // 'buzz', 'wobble', 'pop', 'swipe'
+    clicks: { type: Number, default: 0 },
     order: { type: Number, default: 0 }
 });
 
@@ -27,6 +32,9 @@ const generalProfileSchema = new mongoose.Schema({
     },
     name: { type: String, trim: true, default: '' },
     title: { type: String, trim: true, default: '' }, // e.g. "Company owner"
+    specialization: { type: String, trim: true, default: '' },
+    city: { type: String, trim: true, default: '' },
+    state: { type: String, trim: true, default: '' },
     bio: { type: String, trim: true, default: '' },
     phone: { type: String, trim: true, default: '' },
     email: { type: String, trim: true, default: '' },
@@ -49,6 +57,17 @@ const generalProfileSchema = new mongoose.Schema({
         default: 'outfit'
     },
     links: [linkSchema],
+    showPhoto: { type: Boolean, default: true },
+    showName: { type: Boolean, default: true },
+    showLocation: { type: Boolean, default: true },
+    showSpecialization: { type: Boolean, default: true },
+    showAbout: { type: Boolean, default: true },
+    showConnect: { type: Boolean, default: true },
+    showWhatIDo: { type: Boolean, default: true },
+    showArtPortfolio: { type: Boolean, default: true },
+    showGallery: { type: Boolean, default: true },
+    artLinks: { type: mongoose.Schema.Types.Mixed, default: () => ({}) },
+
     /** Suggestions section — max 4 items with image, caption, and link */
     suggestionsTitle: { type: String, trim: true, default: 'Suggestions' },
     suggestions: [{

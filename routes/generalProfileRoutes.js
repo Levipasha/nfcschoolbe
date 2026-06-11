@@ -142,6 +142,44 @@ function buildTypeQueryCond(requestedType) {
     };
 }
 
+function mapGeneralProfileResponse(profile, requestedType) {
+    if (!profile) return null;
+    return {
+        username: profile.username,
+        name: profile.name,
+        title: profile.title,
+        specialization: profile.specialization || '',
+        city: profile.city || '',
+        state: profile.state || '',
+        bio: profile.bio,
+        phone: profile.phone || '',
+        email: profile.email || profile.ownerEmail || '',
+        photo: profile.photo,
+        banner: profile.banner || '',
+        menuPdf: profile.menuPdf || '',
+        theme: profile.theme,
+        font: profile.font || 'outfit',
+        bioFont: profile.bioFont || profile.font || 'outfit',
+        links: profile.links || [],
+        social: profile.social || {},
+        profileType: profile.profileType || requestedType || 'general',
+        gallery: normalizeGalleryInput(profile.gallery),
+        suggestionsTitle: profile.suggestionsTitle || 'Suggestions',
+        suggestions: normalizeSuggestionsInput(profile.suggestions),
+        showPhoto: profile.showPhoto !== false,
+        showName: profile.showName !== false,
+        showLocation: profile.showLocation !== false,
+        showSpecialization: profile.showSpecialization !== false,
+        showAbout: profile.showAbout !== false,
+        showConnect: profile.showConnect !== false,
+        showWhatIDo: profile.showWhatIDo !== false,
+        showArtPortfolio: profile.showArtPortfolio !== false,
+        showGallery: profile.showGallery !== false,
+        artLinks: profile.artLinks || {}
+    };
+}
+
+
 // @route   POST /api/general-profile/upload-pdf
 // @desc    Upload menu PDF to Cloudinary (for restaurant profiles)
 // @access  Private (Firebase)
@@ -176,26 +214,7 @@ router.get('/u/:username', async (req, res) => {
         }
         res.json({
             success: true,
-            data: {
-                username: profile.username,
-                name: profile.name,
-                title: profile.title,
-                bio: profile.bio,
-                phone: profile.phone || '',
-                email: profile.email || profile.ownerEmail || '',
-                photo: profile.photo,
-                banner: profile.banner || '',
-                menuPdf: profile.menuPdf || '',
-                theme: profile.theme,
-                font: profile.font || 'outfit',
-                bioFont: profile.bioFont || profile.font || 'outfit',
-                links: profile.links || [],
-                social: profile.social || {},
-                profileType: profile.profileType || 'general',
-                gallery: normalizeGalleryInput(profile.gallery),
-                suggestionsTitle: profile.suggestionsTitle || 'Suggestions',
-                suggestions: normalizeSuggestionsInput(profile.suggestions)
-            }
+            data: mapGeneralProfileResponse(profile, 'general')
         });
     } catch (error) {
         console.error('Error fetching general profile:', error);
@@ -223,26 +242,7 @@ router.get('/me', firebaseAuth, async (req, res) => {
         }
         res.json({
             success: true,
-            data: {
-                username: profile.username,
-                name: profile.name,
-                title: profile.title,
-                bio: profile.bio,
-                phone: profile.phone || '',
-                email: profile.email || '',
-                photo: profile.photo,
-                banner: profile.banner || '',
-                menuPdf: profile.menuPdf || '',
-                theme: profile.theme,
-                font: profile.font || 'outfit',
-                bioFont: profile.bioFont || profile.font || 'outfit',
-                links: profile.links || [],
-                social: profile.social || {},
-                profileType: profile.profileType || requestedType,
-                gallery: normalizeGalleryInput(profile.gallery),
-                suggestionsTitle: profile.suggestionsTitle || 'Suggestions',
-                suggestions: normalizeSuggestionsInput(profile.suggestions)
-            }
+            data: mapGeneralProfileResponse(profile, requestedType)
         });
     } catch (error) {
         console.error('Error fetching my general profile:', error);
@@ -259,7 +259,8 @@ router.get('/me', firebaseAuth, async (req, res) => {
 router.post('/', firebaseAuth, async (req, res) => {
     try {
         const { uid, email } = req.firebaseUser;
-        const { username, name, title, bio, phone, email: contactEmail, photo, banner, menuPdf, theme, font, bioFont, links, social, gallery, suggestions, suggestionsTitle } = req.body;
+        const { username, name, title, bio, phone, email: contactEmail, photo, banner, menuPdf, theme, font, bioFont, links, social, gallery, suggestions, suggestionsTitle, city, state, specialization,
+            showPhoto, showName, showLocation, showSpecialization, showAbout, showConnect, showWhatIDo, showArtPortfolio, showGallery, artLinks } = req.body;
         const requestedType = normalizeProfileType(req.body.profileType || req.body.type || 'general');
 
         const normalizedUsername = (username || '').toLowerCase().trim().replace(/\s+/g, '_');
@@ -273,6 +274,9 @@ router.post('/', firebaseAuth, async (req, res) => {
 
             name: name || '',
             title: title || '',
+            specialization: specialization || '',
+            city: city || '',
+            state: state || '',
             bio: bio || '',
             phone: phone || '',
             email: contactEmail || '',
@@ -289,31 +293,22 @@ router.post('/', firebaseAuth, async (req, res) => {
             suggestions: normalizeSuggestionsInput(suggestions),
             profileType: requestedType,
             ownerEmail: email,
-            ownerUid: uid
+            ownerUid: uid,
+            showPhoto: showPhoto !== false,
+            showName: showName !== false,
+            showLocation: showLocation !== false,
+            showSpecialization: showSpecialization !== false,
+            showAbout: showAbout !== false,
+            showConnect: showConnect !== false,
+            showWhatIDo: showWhatIDo !== false,
+            showArtPortfolio: showArtPortfolio !== false,
+            showGallery: showGallery !== false,
+            artLinks: artLinks || {}
         });
 
         res.json({
             success: true,
-            data: {
-                username: profile.username,
-                name: profile.name,
-                title: profile.title,
-                bio: profile.bio,
-                phone: profile.phone || '',
-                email: profile.email || '',
-                photo: profile.photo,
-                banner: profile.banner || '',
-                menuPdf: profile.menuPdf || '',
-                theme: profile.theme,
-                font: profile.font || 'outfit',
-                bioFont: profile.bioFont || profile.font || 'outfit',
-                links: profile.links,
-                social: profile.social,
-                profileType: profile.profileType,
-                gallery: normalizeGalleryInput(profile.gallery),
-                suggestionsTitle: profile.suggestionsTitle || 'Suggestions',
-                suggestions: normalizeSuggestionsInput(profile.suggestions)
-            }
+            data: mapGeneralProfileResponse(profile, requestedType)
         });
 
         // Send public welcome email asynchronously
@@ -337,7 +332,8 @@ router.post('/', firebaseAuth, async (req, res) => {
 router.put('/me', firebaseAuth, async (req, res) => {
     try {
         const { uid, email } = req.firebaseUser;
-        const { username, name, title, bio, phone, email: contactEmail, photo, banner, menuPdf, theme, font, bioFont, links, social, gallery, suggestions, suggestionsTitle } = req.body;
+        const { username, name, title, bio, phone, email: contactEmail, photo, banner, menuPdf, theme, font, bioFont, links, social, gallery, suggestions, suggestionsTitle, city, state, specialization,
+            showPhoto, showName, showLocation, showSpecialization, showAbout, showConnect, showWhatIDo, showArtPortfolio, showGallery, artLinks } = req.body;
         const requestedType = normalizeProfileType(req.body.profileType || req.body.type || 'general');
 
         const ownerCond = { $or: [{ ownerUid: uid }, { ownerEmail: email }] };
@@ -372,6 +368,19 @@ router.put('/me', firebaseAuth, async (req, res) => {
         if (gallery !== undefined) updates.gallery = normalizeGalleryInput(gallery);
         if (suggestionsTitle !== undefined) updates.suggestionsTitle = suggestionsTitle;
         if (suggestions !== undefined) updates.suggestions = normalizeSuggestionsInput(suggestions);
+        if (city !== undefined) updates.city = city;
+        if (state !== undefined) updates.state = state;
+        if (specialization !== undefined) updates.specialization = specialization;
+        if (showPhoto !== undefined) updates.showPhoto = showPhoto;
+        if (showName !== undefined) updates.showName = showName;
+        if (showLocation !== undefined) updates.showLocation = showLocation;
+        if (showSpecialization !== undefined) updates.showSpecialization = showSpecialization;
+        if (showAbout !== undefined) updates.showAbout = showAbout;
+        if (showConnect !== undefined) updates.showConnect = showConnect;
+        if (showWhatIDo !== undefined) updates.showWhatIDo = showWhatIDo;
+        if (showArtPortfolio !== undefined) updates.showArtPortfolio = showArtPortfolio;
+        if (showGallery !== undefined) updates.showGallery = showGallery;
+        if (artLinks !== undefined) updates.artLinks = artLinks;
 
         if (username !== undefined) {
             const normalizedUsername = (username || '').toLowerCase().trim().replace(/\s+/g, '_');
@@ -398,26 +407,7 @@ router.put('/me', firebaseAuth, async (req, res) => {
 
         res.json({
             success: true,
-            data: {
-                username: profile.username,
-                name: profile.name,
-                title: profile.title,
-                bio: profile.bio,
-                phone: profile.phone || '',
-                email: profile.email || '',
-                photo: profile.photo,
-                banner: profile.banner || '',
-                menuPdf: profile.menuPdf || '',
-                theme: profile.theme,
-                font: profile.font || 'outfit',
-                bioFont: profile.bioFont || profile.font || 'outfit',
-                links: profile.links,
-                social: profile.social,
-                profileType: profile.profileType,
-                gallery: normalizeGalleryInput(profile.gallery),
-                suggestionsTitle: profile.suggestionsTitle || 'Suggestions',
-                suggestions: normalizeSuggestionsInput(profile.suggestions)
-            }
+            data: mapGeneralProfileResponse(profile, requestedType)
         });
     } catch (error) {
         console.error('Error updating general profile:', error);
@@ -473,24 +463,7 @@ router.get('/sample', async (req, res) => {
 
         res.json({
             success: true,
-            data: {
-                username: profile.username,
-                name: profile.name,
-                title: profile.title,
-                bio: profile.bio,
-                photo: profile.photo,
-                banner: profile.banner || '',
-                menuPdf: profile.menuPdf || '',
-                theme: profile.theme,
-                font: profile.font || 'outfit',
-                bioFont: profile.bioFont || profile.font || 'outfit',
-                links: profile.links || [],
-                social: profile.social || {},
-                profileType: profile.profileType || 'general',
-                gallery: normalizeGalleryInput(profile.gallery),
-                suggestionsTitle: profile.suggestionsTitle || 'Suggestions',
-                suggestions: normalizeSuggestionsInput(profile.suggestions)
-            }
+            data: mapGeneralProfileResponse(profile, 'general')
         });
     } catch (error) {
         console.error('Error fetching sample general profile:', error);

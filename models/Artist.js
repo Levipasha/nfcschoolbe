@@ -161,6 +161,21 @@ const artistSchema = new mongoose.Schema({
         trim: true,
         default: ''
     },
+    city: {
+        type: String,
+        trim: true,
+        default: ''
+    },
+    state: {
+        type: String,
+        trim: true,
+        default: ''
+    },
+    country: {
+        type: String,
+        trim: true,
+        default: 'India'
+    },
     specialization: {
         type: String,
         trim: true,
@@ -245,11 +260,57 @@ const artistSchema = new mongoose.Schema({
         trim: true,
         default: 'outfit'
     },
+    // Visibility toggles for each profile section
+    showPhoto: {
+        type: Boolean,
+        default: true
+    },
+    showName: {
+        type: Boolean,
+        default: true
+    },
+    showLocation: {
+        type: Boolean,
+        default: true
+    },
+    showSpecialization: {
+        type: Boolean,
+        default: true
+    },
+    showAbout: {
+        type: Boolean,
+        default: true
+    },
+    showConnect: {
+        type: Boolean,
+        default: true
+    },
+    showWhatIDo: {
+        type: Boolean,
+        default: true
+    },
+    showArtPortfolio: {
+        type: Boolean,
+        default: true
+    },
+    showGallery: {
+        type: Boolean,
+        default: true
+    },
     // External art platform links (Behance, ArtStation, Etsy, etc.)
     artLinks: {
         type: mongoose.Schema.Types.Mixed,
         default: () => ({})
     },
+    links: [{
+        title: { type: String, trim: true, default: '' },
+        url: { type: String, trim: true, default: '' },
+        platform: { type: String, trim: true, default: '' },
+        image: { type: String, trim: true, default: '' },
+        prioritizeType: { type: String, trim: true, default: 'none' }, // 'none', 'animate', 'redirect'
+        animationType: { type: String, trim: true, default: 'buzz' }, // 'buzz', 'wobble', 'pop', 'swipe'
+        order: { type: Number, default: 0 }
+    }],
     // Secure access token for NFC tag
     accessToken: {
         type: String,

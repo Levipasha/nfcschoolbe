@@ -342,6 +342,8 @@ router.get('/public/:artistId', async (req, res) => {
                 bio: artist.bio,
                 specialization: artist.specialization,
                 experience: artist.experience,
+                city: artist.city,
+                state: artist.state,
                 website: artist.website,
                 instagram: artist.instagram,
                 facebook: artist.facebook,
@@ -366,8 +368,18 @@ router.get('/public/:artistId', async (req, res) => {
                 phone: artist.phone,
                 gallery: artist.gallery || [],
                 artLinks: artist.artLinks || [],
+                links: artist.links || [],
                 profileTheme: artist.profileTheme,
-                profileFont: artist.profileFont
+                profileFont: artist.profileFont,
+                showPhoto: artist.showPhoto,
+                showName: artist.showName,
+                showLocation: artist.showLocation,
+                showSpecialization: artist.showSpecialization,
+                showAbout: artist.showAbout,
+                showConnect: artist.showConnect,
+                showWhatIDo: artist.showWhatIDo,
+                showArtPortfolio: artist.showArtPortfolio,
+                showGallery: artist.showGallery
             }
         });
     } catch (error) {
@@ -566,6 +578,8 @@ router.post('/', async (req, res) => {
             instagram: req.body.instagram || '',
             facebook: req.body.facebook || '',
             twitter: req.body.twitter || '',
+            city: req.body.city || '',
+            state: req.body.state || '',
             specialization: req.body.specialization || '',
             experience: req.body.experience || '',
             backgroundPhoto: req.body.backgroundPhoto || undefined,
@@ -605,6 +619,8 @@ router.put('/:id', async (req, res) => {
             instagram: req.body.instagram,
             facebook: req.body.facebook,
             twitter: req.body.twitter,
+            city: req.body.city,
+            state: req.body.state,
             whatsapp: req.body.whatsapp,
             linkedin: req.body.linkedin,
             specialization: req.body.specialization,
@@ -613,6 +629,7 @@ router.put('/:id', async (req, res) => {
             backgroundPhoto: req.body.backgroundPhoto,
             gallery: req.body.gallery,
             profileTheme: req.body.profileTheme,
+            links: req.body.links,
             updatedAt: Date.now()
         };
 
@@ -914,6 +931,8 @@ router.put('/me/:artistId', firebaseAuth, async (req, res) => {
             twitch: req.body.twitch,
             quora: req.body.quora,
             github: req.body.github,
+            city: req.body.city,
+            state: req.body.state,
             specialization: req.body.specialization,
             experience: req.body.experience,
             artworkCount: req.body.artworkCount,
@@ -929,8 +948,18 @@ router.put('/me/:artistId', firebaseAuth, async (req, res) => {
             bioFont: req.body.bioFont,
             isSetup: req.body.isSetup !== undefined ? req.body.isSetup : artist.isSetup,
             artLinks: req.body.artLinks,
+            links: req.body.links,
             ownerEmail: email || artist.ownerEmail,
             ownerUid: uid || artist.ownerUid,
+            showPhoto: req.body.showPhoto,
+            showName: req.body.showName,
+            showLocation: req.body.showLocation,
+            showSpecialization: req.body.showSpecialization,
+            showAbout: req.body.showAbout,
+            showConnect: req.body.showConnect,
+            showWhatIDo: req.body.showWhatIDo,
+            showArtPortfolio: req.body.showArtPortfolio,
+            showGallery: req.body.showGallery,
             updatedAt: Date.now()
         };
 
@@ -1006,6 +1035,8 @@ router.put('/setup/:token', async (req, res) => {
             twitch: req.body.twitch,
             quora: req.body.quora,
             github: req.body.github,
+            city: req.body.city,
+            state: req.body.state,
             specialization: req.body.specialization,
             experience: req.body.experience,
             instagramName: req.body.instagramName,
@@ -1019,6 +1050,7 @@ router.put('/setup/:token', async (req, res) => {
             bioFont: req.body.bioFont,
             ownerEmail: req.body.ownerEmail,
             ownerUid: req.body.ownerUid,
+            links: req.body.links,
             isSetup: true,
             updatedAt: Date.now()
         };
